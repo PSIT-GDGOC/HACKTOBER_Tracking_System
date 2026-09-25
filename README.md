@@ -1,158 +1,142 @@
-# GDGOC Hacktoberfest — Contribution Tracking System
+<div align="center">
 
-> A centralized monorepo platform for PSIT students to discover, claim, track, and manage open-source contributions across GDGOC's official Hacktoberfest repositories.
+<img src="frontend/public/gdg-logo.png" alt="GDG on Campus" height="72" />
 
----
+# GDGOC Hacktoberfest
+### Contribution Tracking System
 
-## Table of Contents
+**A monorepo for GDGOC's Hacktoberfest event — student onboarding, atomic issue claiming, GitHub webhook sync, and a live leaderboard.**
 
-- [Overview](#overview)
-- [Architecture](#architecture)
-- [Tech Stack](#tech-stack)
-  - [Frontend](#frontend)
-  - [Backend](#backend)
-  - [Database & Async Worker](#database--async-worker)
-- [Repository Structure](#repository-structure)
-- [Getting Started](#getting-started)
-  - [Prerequisites](#prerequisites)
-  - [Frontend Setup](#frontend-setup)
-  - [Backend Setup](#backend-setup)
-- [Environment Variables](#environment-variables)
-  - [Frontend](#frontend-configuration)
-  - [Backend (.env.example)](#backend-envexample)
-- [API Reference](#api-reference)
-- [Team](#team)
-- [Contributing](#contributing)
-- [License](#license)
+[![Frontend](https://img.shields.io/badge/frontend-Vite%20%2B%20React%2019-646CFF?style=for-the-badge&logo=vite&logoColor=white)](./frontend)
+[![Backend](https://img.shields.io/badge/backend-FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)](./backend)
+[![Database](https://img.shields.io/badge/database-PostgreSQL-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](#)
+[![License](https://img.shields.io/badge/license-MIT-yellow?style=for-the-badge)](#-license)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](#-contributing)
+[![Made with ❤️](https://img.shields.io/badge/made%20with-%E2%9D%A4-red?style=flat-square)](#-team)
+
+[Overview](#-overview) · [Architecture](#-architecture) · [Tech Stack](#-tech-stack) · [Repository Structure](#-repository-structure) · [Quick Start](#-quick-start) · [API](#-api-reference) · [Screenshots](#-screenshots) · [Team](#-team)
+
+</div>
 
 ---
 
-## Overview
+## 📖 Overview
 
-The **GDGOC Hacktoberfest Contribution Tracking System** provides a complete event-management solution for students, maintainers, and campus administrators during Hacktoberfest sprints at PSIT Kanpur. GitHub remains the authoritative source of truth for code, commits, and pull requests — this platform serves as the management and gamification layer on top of it.
+**GDGOC Hacktoberfest — Contribution Tracking System** is a production-grade monorepo platform that sits on top of GitHub and manages the entire Hacktoberfest sprint lifecycle for PSIT Kanpur students:
 
-Key capabilities:
-- **Campus Verification & Onboarding**: Multi-step student registration, roll number identity checks, and GitHub account linking.
-- **Issue Exploration & Atomic Claim Locking**: Filter issues by repository, tech stack, and difficulty; claims use atomic database locking to prevent duplicate assignments.
-- **Webhook Ingestion**: Ingests GitHub push, pull request, and review events to keep contribution records synchronized in near real time.
-- **Dynamic Leaderboard & Scoring**: Weighted scoring based on issue complexity (`Hard=80`, `Medium=40`, `Easy=20`) with live rank calculations.
-- **Role-Based Workspaces**: Tailored dashboards for students (claims & timeline), maintainers (PR review queue), and administrators (moderation & verification approvals).
+- 🎓 **Student onboarding** — registration → roll number identity check → ID card upload & QR verification → GitHub OAuth
+- 🔒 **Atomic issue claiming** — row-level PostgreSQL locks ensure no two students can claim the same issue simultaneously
+- 🔔 **Real-time sync** — GitHub webhooks push pull request and commit events into the platform automatically with HMAC-SHA256 signature verification
+- 🏆 **Live leaderboard** — weighted points calculation (`Hard: 80` · `Medium: 40` · `Easy: 20`) with dynamic standings
+- 🛠 **Role-based dashboards** — distinct interfaces tailored for students, maintainers (review queue), and administrators (moderation & approvals)
+
+> GitHub remains the source of truth for all source code. This platform is the event-management layer that orchestrates participation and gamification on top of it.
 
 ---
 
-## Architecture
+## 🏗 Architecture
 
-```text
-┌────────────────────────────────────────────────────────────────────────┐
-│                        FRONTEND (Vite + React)                         │
-│                                                                        │
-│   Landing / Auth   │   Student Dashboard   │   Issue Explorer          │
-│   Repository Hub   │   Leaderboard         │   Maintainer / Admin      │
-│                                                                        │
-│   └───────────────────────────────────┬────────────────────────────┘   │
-│                                       │ fetch / REST JSON              │
-└───────────────────────────────────────┼────────────────────────────────┘
-                                        │
-                                        ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                        BACKEND (FastAPI + ASGI)                        │
-│                                                                        │
-│   Routers:                                                             │
-│   • /auth              • /issues           • /pull-requests            │
-│   • /commits           • /contributions    • /dashboard                │
-│   • /users             • /engagement       • /webhooks                 │
-│                                                                        │
-│   Core Layers:                                                         │
-│   • Pydantic v2 Schema Validation                                      │
-│   • Service Layer (Claim locking, validation, scoring algorithms)      │
-│   • Celery Worker Tasks (sqla broker)                                  │
-│   • SQLAlchemy 2.0 ORM Engine                                          │
-└───────────────────────────────────────┬────────────────────────────────┘
-                                        │
-                                        ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│                         PostgreSQL (Supabase)                          │
-│                                                                        │
-│   Tables:                                                              │
-│   • users              • repositories      • issues                    │
-│   • claims             • pull_requests     • commits                   │
-│   • contributions      • reviews           • notifications             │
-│   • activity_feed      • webhook_jobs                                  │
-└────────────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart LR
+    subgraph Client["🖥 Browser"]
+        UI["Frontend<br/>(Vite 7 + React 19)"]
+    end
+
+    subgraph API["⚙ Backend (FastAPI)"]
+        AUTH["/auth"]
+        ISSUES["/issues"]
+        HOOKS["/webhooks"]
+        DASH["/dashboard"]
+        CONTR["/contributions"]
+    end
+
+    subgraph Workers["⚡ Background Workers"]
+        CELERY["Celery Worker<br/>(sqla broker)"]
+    end
+
+    subgraph Data["🗄 Storage"]
+        PG[("PostgreSQL (Supabase)")]
+    end
+
+    GH["🐙 GitHub"]
+
+    UI -- "REST / JSON" --> API
+    API -- "SQLAlchemy 2.0" --> PG
+    GH -- "Webhooks (HMAC-SHA256)" --> HOOKS
+    HOOKS -. "Async Jobs" .-> CELERY
+    CELERY --> PG
+    API -- "PyGithub / HTTPX" --> GH
 ```
 
 ---
 
-## Tech Stack
+## 🧰 Tech Stack
 
-### Frontend
+<table>
+  <tr>
+    <td valign="top" width="50%">
+      <h3>🎨 Frontend</h3>
+      <ul>
+        <li><b>Build Tool:</b> <a href="https://vite.dev/">Vite 7</a></li>
+        <li><b>Framework:</b> <a href="https://react.dev/">React 19</a></li>
+        <li><b>Language:</b> Plain JavaScript (ES6+, JSX, no TypeScript)</li>
+        <li><b>Styling:</b> <a href="https://tailwindcss.com/">Tailwind CSS v4</a> (<code>@tailwindcss/vite</code>)</li>
+        <li><b>Routing:</b> <a href="https://reactrouter.com/">React Router DOM v7</a></li>
+        <li><b>Utilities:</b> <code>clsx</code>, <code>tailwind-merge</code></li>
+        <li><b>Bundler Plugin:</b> <code>vite-plugin-singlefile</code></li>
+        <li><b>API Layer:</b> Centralized typed client (<code>src/lib/api.js</code>) with in-memory mock demo adapter</li>
+      </ul>
+    </td>
+    <td valign="top" width="50%">
+      <h3>⚙️ Backend</h3>
+      <ul>
+        <li><b>Framework:</b> <a href="https://fastapi.tiangolo.com/">FastAPI 0.137</a></li>
+        <li><b>ASGI Server:</b> <a href="https://www.uvicorn.org/">Uvicorn 0.49</a></li>
+        <li><b>Language:</b> Python 3.12+</li>
+        <li><b>ORM:</b> <a href="https://www.sqlalchemy.org/">SQLAlchemy 2.0</a></li>
+        <li><b>Validation:</b> <a href="https://docs.pydantic.dev/">Pydantic v2</a> &amp; <code>pydantic-settings</code></li>
+        <li><b>Migrations:</b> <a href="https://alembic.sqlalchemy.org/">Alembic 1.20</a></li>
+        <li><b>Database Driver:</b> <code>psycopg2-binary</code></li>
+        <li><b>Async Tasks:</b> <a href="https://docs.celeryq.dev/">Celery 5.6</a> (PostgreSQL broker transport)</li>
+        <li><b>Auth &amp; Security:</b> PyJWT (HS256) + GitHub OAuth</li>
+        <li><b>Image Handling:</b> Pillow 12.3</li>
+        <li><b>GitHub Integration:</b> PyGithub 2.2 &amp; HTTPX 0.28</li>
+      </ul>
+    </td>
+  </tr>
+</table>
 
-Verified directly from [`frontend/package.json`](frontend/package.json):
-
-| Category | Technology | Version | Purpose |
-|---|---|---|---|
-| **Build Tool & Dev Server** | [Vite](https://vite.dev/) | `^7.3.2` | Lightning-fast ESM dev server and production bundler |
-| **Framework** | [React](https://react.dev/) | `^19.2.6` | Component-driven UI development |
-| **Routing** | [React Router DOM](https://reactrouter.com/) | `^7.18.4` | Client-side routing with role-protected layouts |
-| **Styling** | [Tailwind CSS](https://tailwindcss.com/) | `^4.1.17` | Utility-first CSS via `@tailwindcss/vite` |
-| **Style Utilities** | `clsx` & `tailwind-merge` | `2.1.1` / `3.4.0` | Safe conditional class merging |
-| **Vite Plugins** | `@vitejs/plugin-react` | `^5.1.1` | React Fast Refresh support |
-| **Single-File Bundling** | `vite-plugin-singlefile` | `^2.3.0` | Standalone deployable single-bundle support |
-
-### Backend
-
-Verified directly from [`backend/requirements.txt`](backend/requirements.txt):
-
-| Category | Technology | Version | Purpose |
-|---|---|---|---|
-| **Web Framework** | [FastAPI](https://fastapi.tiangolo.com/) | `0.137.1` | Modern, high-performance async REST API framework |
-| **ASGI Server** | [Uvicorn](https://www.uvicorn.org/) | `0.49.0` | Standard production ASGI server |
-| **Data Validation** | [Pydantic](https://docs.pydantic.dev/) | `2.13.4` | Data parsing, typing, and schema enforcement |
-| **Settings Management** | `pydantic-settings` | `2.15.0` | Environment configuration management |
-| **ORM** | [SQLAlchemy](https://www.sqlalchemy.org/) | `2.0.54` | SQL toolkit and Object Relational Mapper |
-| **Database Migrations** | [Alembic](https://alembic.sqlalchemy.org/) | `1.20.0` | Database schema migrations |
-| **PostgreSQL Driver** | `psycopg2-binary` | `2.9.13` | PostgreSQL adapter for Python |
-| **Background Jobs** | [Celery](https://docs.celeryq.dev/) | `5.6.3` | Distributed task execution |
-| **GitHub API** | `PyGithub` | `2.2.0` | GitHub REST API client |
-| **HTTP Client** | `httpx` | `0.28.1` | Async HTTP requests |
-| **Authentication** | `PyJWT` | `2.15.0` | JSON Web Token encoding and verification |
-| **Image Processing** | `Pillow` | `12.3.0` | Student ID verification and image handling |
-| **Environment Management**| `python-dotenv` | `1.2.2` | Reads `.env` files for local dev |
-
-### Database & Async Worker
-
-- **Database Engine**: PostgreSQL 14+ (hosted via Supabase)
-- **Celery Broker & Result Backend**: SQLAlchemy / PostgreSQL transport (`sqla+postgresql://`), eliminating the need for an external Redis server in lightweight deployments.
+> **Database & Deployment:** PostgreSQL (Supabase) · Uvicorn ASGI on Railway / Render · GitHub Actions CI
 
 ---
 
-## Repository Structure
+## 📂 Repository Structure
 
 ```text
 HACKTOBER_Tracking_System/
-├── frontend/                 # React 19 + Vite 7 SPA
-│   ├── public/               # Static assets & brand icons
-│   ├── src/
-│   │   ├── assets/           # Media & graphics
+├── frontend/                 # Vite 7 + React 19 single-page application
+│   ├── public/               # Static assets & brand icons (gdg-logo.png)
+│   ├── src/                  # Application source code
+│   │   ├── assets/           # Media & logo assets
 │   │   ├── components/       # UI primitives, domain cards, layout shell
 │   │   ├── lib/              # API client, auth context, hooks, formatting
 │   │   ├── pages/            # View routes (Auth, Student, Issues, Repos, Engage, Staff, etc.)
-│   │   ├── utils/            # Styling utility helpers (clsx, twMerge)
+│   │   ├── utils/            # Styling utility helpers (cn / clsx / twMerge)
 │   │   ├── App.jsx           # App routes & role-based route guards
 │   │   ├── index.css         # Neo-brutalist theme & Tailwind CSS v4 setup
 │   │   └── main.jsx          # React DOM root entry
-│   ├── index.html            # HTML entry point
+│   ├── index.html            # Vite HTML entry point
 │   ├── package.json          # Frontend scripts & dependencies
-│   ├── package-lock.json
+│   ├── package-lock.json     # Dependency lockfile
 │   ├── vite.config.js        # Vite & Tailwind CSS v4 configuration
 │   └── README.md             # Frontend-specific documentation
-├── backend/                  # FastAPI 0.137 Python Backend
+├── backend/                  # FastAPI 0.137 Python REST API server
 │   ├── alembic/              # Alembic database migrations
-│   │   ├── versions/         # Schema migration revisions
-│   │   └── env.py
-│   ├── app/
+│   │   ├── versions/         # Schema migration revisions (0001, 0002)
+│   │   └── env.py            # Alembic runtime configuration
+│   ├── app/                  # Application modules
 │   │   ├── models/           # SQLAlchemy ORM models (11 domain tables)
-│   │   ├── routers/          # FastAPI APIRouter endpoints
+│   │   ├── routers/          # FastAPI route endpoints
 │   │   ├── schemas/          # Pydantic v2 request & response schemas
 │   │   ├── services/         # Core business logic & database service layer
 │   │   ├── tasks/            # Celery background tasks
@@ -164,7 +148,7 @@ HACKTOBER_Tracking_System/
 │   │   └── main.py           # FastAPI application entry point
 │   ├── tests/                # Pytest test suite (14 test modules)
 │   ├── .env.example          # Backend environment configuration template
-│   ├── .gitignore
+│   ├── .gitignore            # Backend gitignore
 │   ├── alembic.ini           # Alembic migration configuration
 │   ├── built_v2.md           # Architecture build status
 │   ├── openapi.json          # Exported OpenAPI 3.1 specification
@@ -174,25 +158,25 @@ HACKTOBER_Tracking_System/
 │   ├── seed.py               # Database seeder script
 │   └── tasks_v2.md           # Backend task tracking
 ├── .gitignore                # Root monorepo exclusion rules
-└── README.md                 # Unified repository documentation
+└── README.md                 # Unified project documentation
 ```
 
 ---
 
-## Getting Started
+## 🚀 Quick Start
 
 ### Prerequisites
 
-- **Node.js**: 18+ and npm
-- **Python**: 3.12+
-- **PostgreSQL**: 14+ instance or Supabase project
-- **Git**
+| Tool | Version | Purpose |
+|---|---|---|
+| **Node.js** | `18+` | Frontend package execution and runtime |
+| **Python** | `3.12+` | Backend API and worker runtime |
+| **PostgreSQL** | `14+` (or Supabase) | Primary relational database |
+| **Git** | latest | Version control |
 
 ---
 
-### Frontend Setup
-
-The frontend uses Vite 7 with npm scripts defined in `frontend/package.json`:
+### 🎨 Frontend Setup
 
 ```bash
 # 1. Navigate to the frontend directory
@@ -205,68 +189,53 @@ npm install
 npm run dev
 ```
 
-The application will be available at [http://localhost:5173](http://localhost:5173).
+The application will be live at **`http://localhost:5173`**.
 
-Other available frontend commands:
-```bash
-# Build production bundle
-npm run build
+<details>
+<summary><b>Frontend Configuration Notes</b></summary>
 
-# Preview production build locally
-npm run preview
-```
+- The frontend network layer lives in `frontend/src/lib/api.js`.
+- If running without a backend, the frontend seamlessly defaults to its built-in seeded demo state so the entire UI can be explored locally.
+- To build for production: `npm run build`
+- To preview the production bundle: `npm run preview`
+
+</details>
 
 ---
 
-### Backend Setup
+### ⚙️ Backend Setup
 
 ```bash
 # 1. Navigate to the backend directory
 cd backend
 
-# 2. Create a virtual environment
+# 2. Create and activate a virtual environment
 python -m venv .venv
 
-# 3. Activate the virtual environment
 # Windows (PowerShell):
 .venv\Scripts\Activate.ps1
 # Linux / macOS:
 source .venv/bin/activate
 
-# 4. Install dependencies
+# 3. Install dependencies
 pip install -r requirements.txt
 
-# 5. Configure environment
+# 4. Configure environment variables
 cp .env.example .env
 # Edit .env with your DATABASE_URL, SECRET_KEY, and GitHub credentials
 
-# 6. Apply database migrations
+# 5. Run database migrations
 python -m alembic upgrade head
 
-# 7. Seed sample data (optional)
+# 6. Seed initial sample data (optional)
 python seed.py
 
-# 8. Start the FastAPI development server
+# 7. Start the FastAPI development server
 uvicorn app.main:app --reload --port 8000
 ```
 
-Once running:
-- **API Base**: [http://localhost:8000](http://localhost:8000)
-- **Interactive OpenAPI Docs (Swagger UI)**: [http://localhost:8000/docs](http://localhost:8000/docs)
-- **Alternative Docs (ReDoc)**: [http://localhost:8000/redoc](http://localhost:8000/redoc)
-- **Health Check**: [http://localhost:8000/health](http://localhost:8000/health)
-
----
-
-## Environment Variables
-
-### Frontend Configuration
-
-The frontend network client in `frontend/src/lib/api.js` connects to the FastAPI backend using the API base URL. When run without a configured backend endpoint, the frontend uses its built-in seeded demo state adapter for local development.
-
-### Backend (`.env.example`)
-
-The backend requires configuration according to [`backend/.env.example`](backend/.env.example):
+<details>
+<summary><b>Environment Variables (<code>backend/.env.example</code>)</b></summary>
 
 ```ini
 # ============================================================
@@ -318,109 +287,146 @@ ALLOWED_ORIGINS=https://your-frontend.vercel.app,https://your-custom-domain.com
 MAX_ACTIVE_CLAIMS_PER_STUDENT=2
 ```
 
+</details>
+
+**Backend endpoints:**
+- **API Base:** [http://localhost:8000](http://localhost:8000)
+- **Interactive Swagger UI:** [http://localhost:8000/docs](http://localhost:8000/docs)
+- **ReDoc Documentation:** [http://localhost:8000/redoc](http://localhost:8000/redoc)
+- **Health Check:** [http://localhost:8000/health](http://localhost:8000/health)
+
 ---
 
-## API Reference
-
-The backend exposes the following endpoints grouped by domain routers in `backend/app/routers/`:
+## 🔌 API Reference
 
 ### Auth & Verification (`/auth`)
 
-| Method | Endpoint | Description |
-|---|---|---|
-| `POST` | `/auth/signup` | Register as a new student |
-| `POST` | `/auth/login` | Authenticate with credentials, returns JWT bearer token |
-| `GET` | `/auth/me` | Fetch currently authenticated user session |
-| `POST` | `/auth/verify-id` | Submit student ID card & QR token for automated verification |
-| `GET` | `/auth/github/login` | Retrieve GitHub OAuth login URL |
-| `POST` | `/auth/github/link` | Link authenticated GitHub account to user profile |
+| Method | Endpoint | Auth | Description |
+|---|---|:---:|---|
+| `POST` | `/auth/signup` | — | Register with roll number + name + email |
+| `POST` | `/auth/login` | — | Authenticate with credentials, returns JWT |
+| `GET` | `/auth/me` | ✅ | Fetch current authenticated user session |
+| `POST` | `/auth/verify-id` | ✅ | Upload ID card for automated QR code verification |
+| `GET` | `/auth/github/login` | — | Retrieve GitHub OAuth redirect URL |
+| `POST` | `/auth/github/link` | ✅ | Link GitHub account to student profile |
 
 ### Issues & Claims (`/issues`)
 
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/issues` | List open issues with repository, difficulty, and label filters |
-| `GET` | `/issues/{issue_id}` | Fetch individual issue details |
-| `POST` | `/issues/{issue_id}/claim` | Atomically claim an issue (prevents double claims) |
-| `POST` | `/issues/{issue_id}/unclaim` | Release an active issue claim |
-| `POST` | `/issues/sync` | Trigger an on-demand sync of issues from GitHub |
+| Method | Endpoint | Auth | Description |
+|---|---|:---:|---|
+| `GET` | `/issues` | ✅ | Filterable list (repo, difficulty, tech, status) |
+| `GET` | `/issues/{issue_id}` | ✅ | Issue detail and claim state |
+| `POST` | `/issues/{issue_id}/claim` | ✅ | Atomic claim with PostgreSQL row lock |
+| `POST` | `/issues/{issue_id}/unclaim` | ✅ | Release an active claim |
+| `POST` | `/issues/sync` | ✅ | Trigger on-demand sync from GitHub repositories |
 
 ### Pull Requests & Commits (`/pull-requests`, `/commits`)
 
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/pull-requests` | List pull requests with status and contributor filters |
-| `GET` | `/pull-requests/{pr_id}` | Get individual pull request details |
-| `GET` | `/commits` | List commits across tracked repositories |
+| Method | Endpoint | Auth | Description |
+|---|---|:---:|---|
+| `GET` | `/pull-requests` | ✅ | List pull requests with status and contributor filters |
+| `GET` | `/pull-requests/{pr_id}` | ✅ | Individual pull request details |
+| `GET` | `/commits` | ✅ | Feed of tracked commits across event repositories |
 
 ### Contributions & Moderation (`/contributions`)
 
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/contributions` | List contributions with moderation and status filters |
-| `GET` | `/contributions/my` | Retrieve complete contribution timeline for logged-in user |
-| `GET` | `/contributions/{user_id}` | Retrieve public contribution timeline for a student |
-| `PATCH` | `/contributions/{id}/validation` | Review and mark contribution status (valid / duplicate / rejected) |
-| `PATCH` | `/contributions/{id}/status` | Transition contribution progression state |
+| Method | Endpoint | Auth | Description |
+|---|---|:---:|---|
+| `GET` | `/contributions` | ✅ | List contributions with moderation status filters |
+| `GET` | `/contributions/my` | ✅ | Current user's contribution timeline |
+| `GET` | `/contributions/{user_id}` | ✅ | Public contributor timeline for a specific student |
+| `PATCH` | `/contributions/{id}/validation` | ✅ | Maintainer review: mark valid / duplicate / rejected |
+| `PATCH` | `/contributions/{id}/status` | ✅ | Transition contribution state |
 
-### Dashboards (`/dashboard`)
+### Dashboards & Engagement
 
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/dashboard/student` | Active claims, progress statistics, and recent activity |
-| `GET` | `/dashboard/maintainer` | PR review queue and pending validation tasks |
-| `GET` | `/dashboard/repository/{id}` | Repository-specific health and contribution metrics |
-| `GET` | `/dashboard/admin` | Overall event metrics, verifications, and merge rates |
-
-### Engagement & Search
-
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/leaderboard` | Ranked student leaderboard sorted by weighted points |
-| `GET` | `/notifications` | User notifications and review updates |
-| `GET` | `/activity` | Global real-time activity feed |
-| `GET` | `/search?q=` | Full-text search across issues, contributors, and repositories |
+| Method | Endpoint | Auth | Description |
+|---|---|:---:|---|
+| `GET` | `/dashboard/student` | ✅ | Student metrics (active claims, PR summary, progress) |
+| `GET` | `/dashboard/maintainer` | ✅ | Maintainer review queue and pending validations |
+| `GET` | `/dashboard/repository/{id}` | ✅ | Repository health, stars, open issues, merge rates |
+| `GET` | `/dashboard/admin` | ✅ | Overall event metrics and verification backlog |
+| `GET` | `/leaderboard` | — | Ranked leaderboard sorted by weighted points |
+| `GET` | `/notifications` | ✅ | User notification feed and review alerts |
+| `GET` | `/activity` | — | Global activity stream across all repositories |
+| `GET` | `/search?q=` | ✅ | Unified search across issues, users, and repositories |
 
 ### Webhooks (`/webhooks`)
 
-| Method | Endpoint | Description |
-|---|---|---|
-| `POST` | `/webhooks/github` | Ingests verified GitHub webhook events (HMAC-SHA256 signature checked) |
-| `POST` | `/webhooks/jobs/drain` | Triggers background processing sweep for queued webhook jobs |
-| `GET` | `/webhooks/jobs` | Inspect status of queued and completed webhook jobs |
+| Method | Endpoint | Auth | Description |
+|---|---|:---:|---|
+| `POST` | `/webhooks/github` | HMAC | Ingests verified GitHub webhook events |
+| `POST` | `/webhooks/jobs/drain` | ✅ | Drain due webhook jobs (pg_cron sweep) |
+| `GET` | `/webhooks/jobs` | ✅ | List queued and completed webhook jobs |
 
-### System Health
-
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/health` | Check backend service and configuration status |
+*Full interactive documentation and testing is available at `/docs` (Swagger UI) when the backend is running.*
 
 ---
 
-## Team
+## 🎨 Screenshots
 
-| Member | Focus Area |
-|---|---|
-| **Rudransh** | Frontend Architecture, Vite/React SPA, Neo-brutalist Design System, UI Components |
-| **Abu** | Backend Core, Issue Management, GitHub Webhook Engine, Dashboards |
-| **Aditya** | Auth & Verification Engine, ID/QR Validation, GitHub OAuth, Infrastructure |
-
----
-
-## Contributing
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'feat: add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+<!-- Replace the placeholder paths once screenshots exist. -->
+<table>
+  <tr>
+    <td><img src="docs/screenshots/auth-wizard.png" alt="Auth Wizard" /></td>
+    <td><img src="docs/screenshots/dashboard.png" alt="Student Dashboard" /></td>
+  </tr>
+  <tr>
+    <td><img src="docs/screenshots/issues.png" alt="Issue Explorer" /></td>
+    <td><img src="docs/screenshots/leaderboard.png" alt="Leaderboard" /></td>
+  </tr>
+</table>
 
 ---
 
-## License
+## 👥 Team
 
-This project is open-source under the [MIT License](LICENSE).
+<table>
+  <tr>
+    <td align="center" width="33%">
+      <b>Rudransh</b><br/>
+      <sub>Frontend — every page, component, API client layer</sub>
+    </td>
+    <td align="center" width="33%">
+      <b>Abu</b><br/>
+      <sub>Backend — issues, webhooks, dashboards, schemas</sub>
+    </td>
+    <td align="center" width="33%">
+      <b>Aditya</b><br/>
+      <sub>Auth, QR verification, infra, deployment</sub>
+    </td>
+  </tr>
+</table>
 
-<p align="center">
-  Built with ❤️ by GDG on Campus, PSIT Kanpur
-</p>
+---
+
+## 🤝 Contributing
+
+We welcome contributions from the GDG on Campus PSIT community! Here's how to contribute:
+
+1. **Fork** the repository
+2. **Branch**: `git checkout -b feat/your-feature-name`
+3. **Commit**: follow [Conventional Commits](https://www.conventionalcommits.org/) format (`feat: ...`, `fix: ...`, `docs: ...`)
+4. **Push**: `git push origin feat/your-feature-name`
+5. Open a **Pull Request**
+
+### Development Guidelines
+
+- 🚫 **Plain JavaScript only** in the frontend — no TypeScript
+- 🧪 **Run tests before pushing**: `cd backend && pytest`
+- 🏗 **Build passes locally**: `cd frontend && npm run build`
+- 🔐 **Never commit `.env` or secret keys**
+- 🎨 **Match the existing Neo-brutalist design system**
+
+---
+
+## 📜 License
+
+Distributed under the MIT License. See [LICENSE](LICENSE) for details.
+
+<div align="center">
+  <br/>
+  <a href="#gdgoc-hacktoberfest">⬆ Back to Top</a>
+  <br/><br/>
+  <b>Made with ❤️ by GDG on Campus · PSIT Kanpur</b>
+</div>
