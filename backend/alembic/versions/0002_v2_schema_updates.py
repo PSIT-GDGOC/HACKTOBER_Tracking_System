@@ -8,6 +8,7 @@ Create Date: 2026-09-24 00:40:00.000000
 from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
+from sqlalchemy.dialects import postgresql
 
 
 # revision identifiers, used by Alembic.
@@ -18,7 +19,16 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # 1. Update users table with v2 verification fields and drop erp_verified
+    bind = op.get_bind()
+
+    # 1. Create enum type FIRST
+    verification_method_enum = postgresql.ENUM(
+        "qr_auto", "manual",
+        name="verification_method",
+    )
+    verification_method_enum.create(bind, checkfirst=True)
+
+    # 2. Update users table with v2 verification fields and drop erp_verified
     with op.batch_alter_table("users", schema=None) as batch_op:
         batch_op.add_column(sa.Column("id_card_image_url", sa.String(length=500), nullable=True))
         batch_op.add_column(sa.Column("qr_token", sa.String(length=500), nullable=True))
@@ -26,14 +36,14 @@ def upgrade() -> None:
         batch_op.add_column(
             sa.Column(
                 "verification_method",
-                sa.Enum("qr_auto", "manual", name="verification_method"),
-                nullable=True
+                verification_method_enum,
+                nullable=True,
             )
         )
         batch_op.add_column(sa.Column("verified_at", sa.DateTime(), nullable=True))
         batch_op.drop_column("erp_verified")
 
-    # 2. Create webhook_jobs table (Table #11 replacing Celery broker)
+    # 3. Create webhook_jobs table (Table #11 replacing Celery broker)
     op.create_table(
         "webhook_jobs",
         sa.Column("id", sa.Integer(), primary_key=True, nullable=False),
@@ -81,3 +91,11 @@ def downgrade() -> None:
         batch_op.drop_column("portal_snapshot_json")
         batch_op.drop_column("qr_token")
         batch_op.drop_column("id_card_image_url")
+
+    # 3. Drop enum types LAST
+    postgresql.ENUM(name="verification_method").drop(
+        op.get_bind(), checkfirst=True
+    )
+    postgresql.ENUM(name="webhookjobstatus").drop(
+        op.get_bind(), checkfirst=True
+    )
