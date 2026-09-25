@@ -11,6 +11,8 @@
 [![Backend](https://img.shields.io/badge/backend-FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)](./backend)
 [![Database](https://img.shields.io/badge/database-PostgreSQL-4169E1?style=for-the-badge&logo=postgresql&logoColor=white)](#)
 [![License](https://img.shields.io/badge/license-MIT-yellow?style=for-the-badge)](#-license)
+[![Frontend CI](https://github.com/PSIT-GDGOC/HACKTOBER_Tracking_System/actions/workflows/frontend-ci.yml/badge.svg)](https://github.com/PSIT-GDGOC/HACKTOBER_Tracking_System/actions/workflows/frontend-ci.yml)
+[![Backend CI](https://github.com/PSIT-GDGOC/HACKTOBER_Tracking_System/actions/workflows/backend-ci.yml/badge.svg)](https://github.com/PSIT-GDGOC/HACKTOBER_Tracking_System/actions/workflows/backend-ci.yml)
 [![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg?style=flat-square)](#-contributing)
 [![Made with ❤️](https://img.shields.io/badge/made%20with-%E2%9D%A4-red?style=flat-square)](#-team)
 
