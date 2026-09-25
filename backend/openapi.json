@@ -1,0 +1,5602 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "GDGOC Hacktoberfest Backend",
+    "description": "Event-management API for GDGOC Hacktoberfest open-source contribution tracking.",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "summary": "Health Check",
+        "description": "Health check endpoint to verify backend service status.",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/signup": {
+      "post": {
+        "tags": [
+          "Auth & Verification"
+        ],
+        "summary": "Register as a new student",
+        "description": "Register student with official PSIT roll number and name.\nAccount is created in unverified state pending ID card / QR verification.",
+        "operationId": "signup_auth_signup_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignupResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "tags": [
+          "Auth & Verification"
+        ],
+        "summary": "Log in with roll number or email",
+        "description": "Authenticate student, maintainer, or admin.\nIssues a cryptographically signed JWT scoped by user ID and role.",
+        "operationId": "login_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/me": {
+      "get": {
+        "tags": [
+          "Auth & Verification"
+        ],
+        "summary": "Get authenticated user session",
+        "description": "Retrieve profile details for the currently logged-in user session.\nProtected by JWT Bearer token authentication.",
+        "operationId": "get_me_auth_me_get",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserProfileResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/verify-id": {
+      "post": {
+        "tags": [
+          "Auth & Verification"
+        ],
+        "summary": "Submit ID card and QR code for verification",
+        "description": "Server-side student verification:\n1. Validates ID card photo format and size.\n2. Performs server-side cross-check of roll number and fuzzy name against portal record.\n3. Auto-verifies on exact roll + fuzzy name match; routes to admin review queue on mismatch/missing data.",
+        "operationId": "verify_id_card_auth_verify_id_post",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyIDCardRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerifyIDCardResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/pending-verifications": {
+      "get": {
+        "tags": [
+          "Auth & Verification"
+        ],
+        "summary": "Admin review queue for pending verifications",
+        "description": "Admin-only review queue: returns unverified students who uploaded ID card photos\nthat require manual review and verification decision.",
+        "operationId": "get_pending_verifications_auth_pending_verifications_get",
+        "parameters": [
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Skip"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ManualReviewItemResponse"
+                  },
+                  "title": "Response Get Pending Verifications Auth Pending Verifications Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/verify-manual/{student_id}": {
+      "post": {
+        "tags": [
+          "Auth & Verification"
+        ],
+        "summary": "Admin approve or reject student verification",
+        "description": "Admin decision: approve or reject student verification.\nIf approved, student's account is verified with method 'manual'.",
+        "operationId": "manual_verify_student_auth_verify_manual__student_id__post",
+        "parameters": [
+          {
+            "name": "student_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Student Id"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManualReviewActionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserProfileResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/github/login": {
+      "get": {
+        "tags": [
+          "Auth & Verification"
+        ],
+        "summary": "Initiate GitHub OAuth login URL",
+        "description": "Returns GitHub OAuth authorization URL for the frontend Auth Wizard.",
+        "operationId": "github_oauth_login_auth_github_login_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/github/link": {
+      "post": {
+        "tags": [
+          "Auth & Verification"
+        ],
+        "summary": "Link GitHub account to student profile",
+        "description": "Links authenticated student's profile to their verified GitHub username and GitHub ID.\nEnforces uniqueness across the event.",
+        "operationId": "link_github_auth_github_link_post",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GitHubOAuthLinkRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubOAuthLinkResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/issues/sync": {
+      "post": {
+        "tags": [
+          "Issues"
+        ],
+        "summary": "Sync issues from GitHub",
+        "description": "Backfill / sync issues from GitHub REST API for registered official repositories.\nParses labels to automatically classify difficulty, category, and tech tags.",
+        "operationId": "sync_issues_issues_sync_post",
+        "parameters": [
+          {
+            "name": "repo_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional Repository ID to sync. If omitted, all repos sync.",
+              "title": "Repo Id"
+            },
+            "description": "Optional Repository ID to sync. If omitted, all repos sync."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueSyncResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/issues": {
+      "get": {
+        "tags": [
+          "Issues"
+        ],
+        "summary": "List issues with filters",
+        "description": "Explore issues with multi-attribute filtering (repo, difficulty, category, tech tag, status, keyword search).",
+        "operationId": "list_issues_issues_get",
+        "parameters": [
+          {
+            "name": "repo_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by repository ID",
+              "title": "Repo Id"
+            },
+            "description": "Filter by repository ID"
+          },
+          {
+            "name": "difficulty",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/IssueDifficulty"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by difficulty (easy, medium, hard)",
+              "title": "Difficulty"
+            },
+            "description": "Filter by difficulty (easy, medium, hard)"
+          },
+          {
+            "name": "tech_tag",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by technology tag (e.g. React, Kotlin)",
+              "title": "Tech Tag"
+            },
+            "description": "Filter by technology tag (e.g. React, Kotlin)"
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by category (frontend, backend, ui/ux, etc.)",
+              "title": "Category"
+            },
+            "description": "Filter by category (frontend, backend, ui/ux, etc.)"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/IssueStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by status (open, claimed, in_progress, closed)",
+              "title": "Status"
+            },
+            "description": "Filter by status (open, claimed, in_progress, closed)"
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Search in issue title or description",
+              "title": "Search"
+            },
+            "description": "Search in issue title or description"
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Offset pagination skip",
+              "default": 0,
+              "title": "Skip"
+            },
+            "description": "Offset pagination skip"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Pagination limit",
+              "default": 20,
+              "title": "Limit"
+            },
+            "description": "Pagination limit"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/issues/{issue_id}": {
+      "get": {
+        "tags": [
+          "Issues"
+        ],
+        "summary": "Get issue details",
+        "description": "Fetch comprehensive details for a single issue, including repository info and active claim details if claimed.",
+        "operationId": "get_issue_issues__issue_id__get",
+        "parameters": [
+          {
+            "name": "issue_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Issue Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/issues/{issue_id}/claim": {
+      "post": {
+        "tags": [
+          "Issues"
+        ],
+        "summary": "Claim an open issue",
+        "description": "Atomically claim an open issue.\n- Locks issue row and catches race conditions via database unique constraint.\n- Enforces maximum active claim limit per student.\n- Transitions issue status to 'claimed' and creates contribution record.",
+        "operationId": "claim_issues__issue_id__claim_post",
+        "parameters": [
+          {
+            "name": "issue_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Issue Id"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaimResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/issues/{issue_id}/unclaim": {
+      "post": {
+        "tags": [
+          "Issues"
+        ],
+        "summary": "Release an active claim",
+        "description": "Release a claimed issue back to 'open' status.\nCan only be performed by the claim owner, a maintainer, or an admin.",
+        "operationId": "unclaim_issues__issue_id__unclaim_post",
+        "parameters": [
+          {
+            "name": "issue_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Issue Id"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaimReleaseResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/webhooks/github": {
+      "post": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "GitHub Webhook Receiver",
+        "description": "Primary GitHub Webhook receiver (v2 Architecture - No Celery / No Redis):\n1. Cryptographically verifies HMAC-SHA256 signature against GITHUB_WEBHOOK_SECRET.\n2. Persists payload to Table #11 (`webhook_jobs`) with status 'pending'.\n3. Executes event dispatch through the job engine:\n   - 'issues' (status/difficulty/category sync)\n   - 'pull_request' (auto-links PRs to claimed issues by GitHub username)\n   - 'push' (records commits and links to contributors/issues)\n   - 'pull_request_review' (updates contribution state and notifies student)\n4. Automatically handles retries with exponential backoff on transient errors.",
+        "operationId": "github_webhook_receiver_webhooks_github_post",
+        "parameters": [
+          {
+            "name": "X-GitHub-Event",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "ping",
+              "title": "X-Github-Event"
+            }
+          },
+          {
+            "name": "X-Hub-Signature-256",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Hub-Signature-256"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/webhooks/jobs/drain": {
+      "post": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Drain Due Webhook Jobs (Supabase pg_cron Sweep)",
+        "description": "Drains pending or due-for-retry rows from Table #11 (`webhook_jobs`).\nScheduled via Supabase pg_cron or invoked for manual queue sweeps.",
+        "operationId": "drain_webhook_jobs_webhooks_jobs_drain_post",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/webhooks/jobs": {
+      "get": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "List Webhook Jobs",
+        "description": "List recent webhook jobs for monitoring and audit logging.",
+        "operationId": "list_webhook_jobs_webhooks_jobs_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/pull-requests": {
+      "get": {
+        "tags": [
+          "Pull Requests"
+        ],
+        "summary": "List pull requests with filters",
+        "description": "List pull requests across repositories with filtering by repo, contributor, and status.",
+        "operationId": "list_prs_pull_requests_get",
+        "parameters": [
+          {
+            "name": "repo_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by repository ID",
+              "title": "Repo Id"
+            },
+            "description": "Filter by repository ID"
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by contributor user ID",
+              "title": "User Id"
+            },
+            "description": "Filter by contributor user ID"
+          },
+          {
+            "name": "github_username",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by contributor GitHub username",
+              "title": "Github Username"
+            },
+            "description": "Filter by contributor GitHub username"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/PRStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by status (open, merged, closed, draft)",
+              "title": "Status"
+            },
+            "description": "Filter by status (open, merged, closed, draft)"
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Offset pagination skip",
+              "default": 0,
+              "title": "Skip"
+            },
+            "description": "Offset pagination skip"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Pagination limit",
+              "default": 20,
+              "title": "Limit"
+            },
+            "description": "Pagination limit"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PRListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/pull-requests/{pr_id}": {
+      "get": {
+        "tags": [
+          "Pull Requests"
+        ],
+        "summary": "Get single pull request details",
+        "description": "Retrieve full details for a pull request, including linked issue, reviews, author, and reviewer.",
+        "operationId": "get_pr_pull_requests__pr_id__get",
+        "parameters": [
+          {
+            "name": "pr_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Pr Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PRResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/commits": {
+      "get": {
+        "tags": [
+          "Commits"
+        ],
+        "summary": "List commits",
+        "description": "List commits across repositories and contributors.",
+        "operationId": "list_commits_commits_get",
+        "parameters": [
+          {
+            "name": "repo_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter commits by repository ID",
+              "title": "Repo Id"
+            },
+            "description": "Filter commits by repository ID"
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter commits by contributor user ID",
+              "title": "User Id"
+            },
+            "description": "Filter commits by contributor user ID"
+          },
+          {
+            "name": "github_username",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter commits by contributor GitHub username",
+              "title": "Github Username"
+            },
+            "description": "Filter commits by contributor GitHub username"
+          },
+          {
+            "name": "pr_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter commits by pull request ID",
+              "title": "Pr Id"
+            },
+            "description": "Filter commits by pull request ID"
+          },
+          {
+            "name": "issue_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter commits by linked issue ID",
+              "title": "Issue Id"
+            },
+            "description": "Filter commits by linked issue ID"
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Offset pagination skip",
+              "default": 0,
+              "title": "Skip"
+            },
+            "description": "Offset pagination skip"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Pagination limit",
+              "default": 30,
+              "title": "Limit"
+            },
+            "description": "Pagination limit"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommitListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contributions": {
+      "get": {
+        "tags": [
+          "Contributions"
+        ],
+        "summary": "List contributions with moderation filters",
+        "description": "List contributions across the platform with filtering by lifecycle status and validation status.\nUseful for maintainers and moderators.",
+        "operationId": "get_all_contributions_contributions_get",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ContributionStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by contribution status",
+              "title": "Status"
+            },
+            "description": "Filter by contribution status"
+          },
+          {
+            "name": "validation_status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ContributionValidation"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by validation status",
+              "title": "Validation Status"
+            },
+            "description": "Filter by validation status"
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Skip"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 30,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ContributionResponse"
+                  },
+                  "title": "Response Get All Contributions Contributions Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contributions/my": {
+      "get": {
+        "tags": [
+          "Contributions"
+        ],
+        "summary": "Get full contribution timeline for authenticated user",
+        "description": "Get the authenticated student's full contribution history and timeline.",
+        "operationId": "get_my_timeline_contributions_my_get",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserContributionTimelineResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contributions/{user_id}": {
+      "get": {
+        "tags": [
+          "Contributions"
+        ],
+        "summary": "Get full contribution timeline for user",
+        "description": "Get full contribution history and timeline for a contributor:\nLifecycle progression: claimed \u2192 in_progress \u2192 pr_submitted \u2192 under_review \u2192 changes_requested \u2192 accepted \u2192 merged.",
+        "operationId": "get_timeline_contributions__user_id__get",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserContributionTimelineResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contributions/{user_id}/timeline": {
+      "get": {
+        "tags": [
+          "Contributions"
+        ],
+        "summary": "Get full contribution timeline for user (alias)",
+        "description": "Get full contribution history and timeline for a contributor:\nLifecycle progression: claimed \u2192 in_progress \u2192 pr_submitted \u2192 under_review \u2192 changes_requested \u2192 accepted \u2192 merged.",
+        "operationId": "get_timeline_contributions__user_id__timeline_get",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserContributionTimelineResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contributions/{contribution_id}/validation": {
+      "patch": {
+        "tags": [
+          "Contributions"
+        ],
+        "summary": "Update contribution validation status",
+        "description": "Update contribution validation status (valid, pending, rejected, duplicate, invalid).\nTypically restricted to maintainers and organizers.",
+        "operationId": "moderate_validation_contributions__contribution_id__validation_patch",
+        "parameters": [
+          {
+            "name": "contribution_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Contribution Id"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContributionValidationUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContributionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contributions/{contribution_id}/validate": {
+      "patch": {
+        "tags": [
+          "Contributions"
+        ],
+        "summary": "Update contribution validation status (alias)",
+        "description": "Update contribution validation status (valid, pending, rejected, duplicate, invalid).\nTypically restricted to maintainers and organizers.",
+        "operationId": "moderate_validation_contributions__contribution_id__validate_patch",
+        "parameters": [
+          {
+            "name": "contribution_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Contribution Id"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContributionValidationUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContributionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/contributions/{contribution_id}/status": {
+      "patch": {
+        "tags": [
+          "Contributions"
+        ],
+        "summary": "Transition contribution status",
+        "description": "Explicitly advance contribution status according to the valid state machine graph.",
+        "operationId": "transition_status_contributions__contribution_id__status_patch",
+        "parameters": [
+          {
+            "name": "contribution_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Contribution Id"
+            }
+          },
+          {
+            "name": "new_status",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ContributionStatus",
+              "description": "Target status in lifecycle state machine"
+            },
+            "description": "Target status in lifecycle state machine"
+          },
+          {
+            "name": "detail",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional transition note",
+              "title": "Detail"
+            },
+            "description": "Optional transition note"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContributionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/dashboard/student": {
+      "get": {
+        "tags": [
+          "Dashboard"
+        ],
+        "summary": "Student dashboard overview",
+        "description": "Personalized student dashboard: active claimed issues, PR progress, and valid contribution count.",
+        "operationId": "student_dashboard_dashboard_student_get",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudentDashboardResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/dashboard/maintainer": {
+      "get": {
+        "tags": [
+          "Dashboard"
+        ],
+        "summary": "Maintainer review queue dashboard",
+        "description": "Maintainer dashboard: review queue of open PRs, pending reviews, and recent review activity.",
+        "operationId": "maintainer_dashboard_dashboard_maintainer_get",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaintainerDashboardResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/dashboard/repository/{repository_id}": {
+      "get": {
+        "tags": [
+          "Dashboard"
+        ],
+        "summary": "Repository statistics dashboard",
+        "description": "Repository-level dashboard: issue breakdown, PR counts, commit velocity, and contributor count.",
+        "operationId": "repository_dashboard_dashboard_repository__repository_id__get",
+        "parameters": [
+          {
+            "name": "repository_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Repository Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepositoryDashboardResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/dashboard/admin": {
+      "get": {
+        "tags": [
+          "Dashboard"
+        ],
+        "summary": "Event-wide administration overview",
+        "description": "Executive event dashboard: student participant metrics, ERP verification rate, cross-repo summary, and moderation workload.",
+        "operationId": "admin_dashboard_dashboard_admin_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminDashboardResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/users/me": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Get own profile",
+        "description": "Retrieve the full profile for the authenticated student/maintainer/admin.",
+        "operationId": "get_my_profile_users_me_get",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserProfileResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Update own profile",
+        "description": "Update profile details (such as display name or linked GitHub username) for the authenticated user.",
+        "operationId": "update_my_profile_users_me_patch",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserUpdateProfileRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserProfileResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/users/{user_id}": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Get public profile",
+        "description": "Retrieve a public read-only contributor profile with contribution stats and recent open-source activity.",
+        "operationId": "get_public_profile_users__user_id__get",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserPublicProfileResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/leaderboard": {
+      "get": {
+        "tags": [
+          "Engagement Layer"
+        ],
+        "summary": "Get participant leaderboard ranking",
+        "description": "Calculates contributor leaderboard using indexed PostgreSQL queries with weighted points and merged PR counts. No external data store required.",
+        "operationId": "get_leaderboard_leaderboard_get",
+        "parameters": [
+          {
+            "name": "repo_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter rankings by specific repository ID",
+              "title": "Repo Id"
+            },
+            "description": "Filter rankings by specific repository ID"
+          },
+          {
+            "name": "platform",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by repository platform ('web' or 'android')",
+              "title": "Platform"
+            },
+            "description": "Filter by repository platform ('web' or 'android')"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Page number",
+              "default": 1,
+              "title": "Page"
+            },
+            "description": "Page number"
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Items per page",
+              "default": 20,
+              "title": "Per Page"
+            },
+            "description": "Items per page"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeaderboardResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/notifications": {
+      "get": {
+        "tags": [
+          "Engagement Layer"
+        ],
+        "summary": "Get notifications for current user",
+        "description": "Returns paginated notifications for the authenticated user, prioritized with unread messages first.",
+        "operationId": "get_user_notifications_notifications_get",
+        "parameters": [
+          {
+            "name": "unread_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Filter to only unread notifications",
+              "default": false,
+              "title": "Unread Only"
+            },
+            "description": "Filter to only unread notifications"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Max notifications to retrieve",
+              "default": 20,
+              "title": "Limit"
+            },
+            "description": "Max notifications to retrieve"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Offset for pagination",
+              "default": 0,
+              "title": "Offset"
+            },
+            "description": "Offset for pagination"
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/notifications/{notification_id}/read": {
+      "patch": {
+        "tags": [
+          "Engagement Layer"
+        ],
+        "summary": "Mark single notification as read",
+        "description": "Marks a specific notification as read. Verifies that the notification belongs to the current user.",
+        "operationId": "mark_notification_read_notifications__notification_id__read_patch",
+        "parameters": [
+          {
+            "name": "notification_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "description": "The notification ID to mark read",
+              "title": "Notification Id"
+            },
+            "description": "The notification ID to mark read"
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationMarkReadResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/notifications/read-all": {
+      "post": {
+        "tags": [
+          "Engagement Layer"
+        ],
+        "summary": "Mark all user notifications as read",
+        "description": "Marks all unread notifications for the authenticated user as read in a single batch operation.",
+        "operationId": "mark_all_notifications_read_notifications_read_all_post",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationReadAllResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/activity": {
+      "get": {
+        "tags": [
+          "Engagement Layer"
+        ],
+        "summary": "Get global activity event stream",
+        "description": "Returns a chronologically ordered real-time activity stream of claims, PR submissions, reviews, and merges across the platform.",
+        "operationId": "get_activity_feed_activity_get",
+        "parameters": [
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by event type (e.g. 'claim_created', 'pr_opened', 'pr_merged', 'review_submitted')",
+              "title": "Type"
+            },
+            "description": "Filter by event type (e.g. 'claim_created', 'pr_opened', 'pr_merged', 'review_submitted')"
+          },
+          {
+            "name": "actor_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by user ID of the actor",
+              "title": "Actor Id"
+            },
+            "description": "Filter by user ID of the actor"
+          },
+          {
+            "name": "target_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by target type ('issue', 'pull_request', 'repository')",
+              "title": "Target Type"
+            },
+            "description": "Filter by target type ('issue', 'pull_request', 'repository')"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Max activities to retrieve",
+              "default": 20,
+              "title": "Limit"
+            },
+            "description": "Max activities to retrieve"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Offset for pagination",
+              "default": 0,
+              "title": "Offset"
+            },
+            "description": "Offset for pagination"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityFeedResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/search": {
+      "get": {
+        "tags": [
+          "Search"
+        ],
+        "summary": "Unified multi-entity global search",
+        "description": "Search across issues, pull requests, contributors, repositories, and commits with full-text query matching.",
+        "operationId": "global_search_search_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Search query string",
+              "title": "Q"
+            },
+            "description": "Search query string"
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter results by category: 'all', 'issues', 'pull_requests', 'contributors', 'repositories', 'commits'",
+              "default": "all",
+              "title": "Category"
+            },
+            "description": "Filter results by category: 'all', 'issues', 'pull_requests', 'contributors', 'repositories', 'commits'"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "description": "Max results per entity type",
+              "default": 10,
+              "title": "Limit"
+            },
+            "description": "Max results per entity type"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnifiedSearchResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ActiveClaimSummary": {
+        "properties": {
+          "claim_id": {
+            "type": "integer",
+            "title": "Claim Id"
+          },
+          "issue_id": {
+            "type": "integer",
+            "title": "Issue Id"
+          },
+          "issue_title": {
+            "type": "string",
+            "title": "Issue Title"
+          },
+          "difficulty": {
+            "type": "string",
+            "title": "Difficulty"
+          },
+          "repo_name": {
+            "type": "string",
+            "title": "Repo Name"
+          },
+          "platform": {
+            "type": "string",
+            "title": "Platform"
+          },
+          "claimed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Claimed At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "claim_id",
+          "issue_id",
+          "issue_title",
+          "difficulty",
+          "repo_name",
+          "platform",
+          "claimed_at"
+        ],
+        "title": "ActiveClaimSummary"
+      },
+      "ActivityActorBrief": {
+        "properties": {
+          "id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "github_username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Github Username"
+          },
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          },
+          "role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Role"
+          }
+        },
+        "type": "object",
+        "title": "ActivityActorBrief"
+      },
+      "ActivityFeedResponse": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ActivityItemResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "items"
+        ],
+        "title": "ActivityFeedResponse"
+      },
+      "ActivityItemResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "actor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActivityActorBrief"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "target": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ActivityTargetBrief"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "type",
+          "created_at"
+        ],
+        "title": "ActivityItemResponse"
+      },
+      "ActivityTargetBrief": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type",
+          "id"
+        ],
+        "title": "ActivityTargetBrief"
+      },
+      "AdminDashboardResponse": {
+        "properties": {
+          "total_registered_students": {
+            "type": "integer",
+            "title": "Total Registered Students"
+          },
+          "verified_students": {
+            "type": "integer",
+            "title": "Verified Students"
+          },
+          "pending_manual_review_students": {
+            "type": "integer",
+            "title": "Pending Manual Review Students"
+          },
+          "total_issues": {
+            "type": "integer",
+            "title": "Total Issues"
+          },
+          "open_issues": {
+            "type": "integer",
+            "title": "Open Issues"
+          },
+          "active_claims": {
+            "type": "integer",
+            "title": "Active Claims"
+          },
+          "total_prs_submitted": {
+            "type": "integer",
+            "title": "Total Prs Submitted"
+          },
+          "total_prs_merged": {
+            "type": "integer",
+            "title": "Total Prs Merged"
+          },
+          "total_commits": {
+            "type": "integer",
+            "title": "Total Commits"
+          },
+          "pending_validations_count": {
+            "type": "integer",
+            "title": "Pending Validations Count"
+          },
+          "repositories_overview": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Repositories Overview",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_registered_students",
+          "verified_students",
+          "pending_manual_review_students",
+          "total_issues",
+          "open_issues",
+          "active_claims",
+          "total_prs_submitted",
+          "total_prs_merged",
+          "total_commits",
+          "pending_validations_count"
+        ],
+        "title": "AdminDashboardResponse"
+      },
+      "ClaimReleaseResponse": {
+        "properties": {
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "issue_id": {
+            "type": "integer",
+            "title": "Issue Id"
+          },
+          "claim_id": {
+            "type": "integer",
+            "title": "Claim Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ClaimStatus"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message",
+          "issue_id",
+          "claim_id",
+          "status"
+        ],
+        "title": "ClaimReleaseResponse"
+      },
+      "ClaimResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "issue_id": {
+            "type": "integer",
+            "title": "Issue Id"
+          },
+          "user_id": {
+            "type": "integer",
+            "title": "User Id"
+          },
+          "claimed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Claimed At"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ClaimStatus"
+          },
+          "user": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClaimUserBrief"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "issue_id",
+          "user_id",
+          "claimed_at",
+          "status"
+        ],
+        "title": "ClaimResponse"
+      },
+      "ClaimStatus": {
+        "type": "string",
+        "enum": [
+          "active",
+          "released",
+          "expired",
+          "completed"
+        ],
+        "title": "ClaimStatus"
+      },
+      "ClaimUserBrief": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "psit_roll_no": {
+            "type": "string",
+            "title": "Psit Roll No"
+          },
+          "github_username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Github Username"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "psit_roll_no"
+        ],
+        "title": "ClaimUserBrief"
+      },
+      "CommitListResponse": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "skip": {
+            "type": "integer",
+            "title": "Skip"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/CommitResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "skip",
+          "limit",
+          "items"
+        ],
+        "title": "CommitListResponse"
+      },
+      "CommitResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "repo_id": {
+            "type": "integer",
+            "title": "Repo Id"
+          },
+          "github_commit_sha": {
+            "type": "string",
+            "title": "Github Commit Sha"
+          },
+          "user_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Id"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "issue_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issue Id"
+          },
+          "pr_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pr Id"
+          },
+          "committed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Committed At"
+          },
+          "user": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClaimUserBrief"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "repository": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RepositoryBrief"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "repo_id",
+          "github_commit_sha",
+          "message",
+          "committed_at"
+        ],
+        "title": "CommitResponse"
+      },
+      "ContributionPRBrief": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "github_pr_id": {
+            "type": "integer",
+            "title": "Github Pr Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "github_pr_id",
+          "title",
+          "status"
+        ],
+        "title": "ContributionPRBrief"
+      },
+      "ContributionResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "user_id": {
+            "type": "integer",
+            "title": "User Id"
+          },
+          "issue_id": {
+            "type": "integer",
+            "title": "Issue Id"
+          },
+          "pr_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pr Id"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ContributionStatus"
+          },
+          "validation_status": {
+            "$ref": "#/components/schemas/ContributionValidation"
+          },
+          "timeline_json": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Timeline Json"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "user": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClaimUserBrief"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "issue": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LinkedIssueBrief"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "pull_request": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ContributionPRBrief"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "user_id",
+          "issue_id",
+          "status",
+          "validation_status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "ContributionResponse"
+      },
+      "ContributionStatus": {
+        "type": "string",
+        "enum": [
+          "claimed",
+          "in_progress",
+          "pr_submitted",
+          "under_review",
+          "changes_requested",
+          "accepted",
+          "merged"
+        ],
+        "title": "ContributionStatus"
+      },
+      "ContributionValidation": {
+        "type": "string",
+        "enum": [
+          "valid",
+          "pending",
+          "rejected",
+          "duplicate",
+          "invalid"
+        ],
+        "title": "ContributionValidation"
+      },
+      "ContributionValidationUpdate": {
+        "properties": {
+          "validation_status": {
+            "$ref": "#/components/schemas/ContributionValidation"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "validation_status"
+        ],
+        "title": "ContributionValidationUpdate"
+      },
+      "GitHubOAuthLinkRequest": {
+        "properties": {
+          "github_username": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Github Username",
+            "description": "GitHub username"
+          },
+          "github_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Github Id",
+            "description": "GitHub numeric user ID"
+          }
+        },
+        "type": "object",
+        "required": [
+          "github_username"
+        ],
+        "title": "GitHubOAuthLinkRequest"
+      },
+      "GitHubOAuthLinkResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "github_username": {
+            "type": "string",
+            "title": "Github Username"
+          },
+          "github_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Github Id"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success",
+          "github_username",
+          "message"
+        ],
+        "title": "GitHubOAuthLinkResponse"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "IssueDifficulty": {
+        "type": "string",
+        "enum": [
+          "easy",
+          "medium",
+          "hard"
+        ],
+        "title": "IssueDifficulty"
+      },
+      "IssueListResponse": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "skip": {
+            "type": "integer",
+            "title": "Skip"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/IssueResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "skip",
+          "limit",
+          "items"
+        ],
+        "title": "IssueListResponse"
+      },
+      "IssueResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "repo_id": {
+            "type": "integer",
+            "title": "Repo Id"
+          },
+          "github_issue_id": {
+            "type": "integer",
+            "title": "Github Issue Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "difficulty": {
+            "$ref": "#/components/schemas/IssueDifficulty"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "tech_tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tech Tags"
+          },
+          "labels": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Labels"
+          },
+          "status": {
+            "$ref": "#/components/schemas/IssueStatus"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "repository": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RepositoryBrief"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "active_claim": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClaimResponse"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "repo_id",
+          "github_issue_id",
+          "title",
+          "difficulty",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "IssueResponse"
+      },
+      "IssueStatus": {
+        "type": "string",
+        "enum": [
+          "open",
+          "claimed",
+          "in_progress",
+          "closed"
+        ],
+        "title": "IssueStatus"
+      },
+      "IssueSyncResponse": {
+        "properties": {
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "synced_count": {
+            "type": "integer",
+            "title": "Synced Count"
+          },
+          "created_count": {
+            "type": "integer",
+            "title": "Created Count"
+          },
+          "updated_count": {
+            "type": "integer",
+            "title": "Updated Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message",
+          "synced_count",
+          "created_count",
+          "updated_count"
+        ],
+        "title": "IssueSyncResponse"
+      },
+      "LeaderboardEntry": {
+        "properties": {
+          "rank": {
+            "type": "integer",
+            "title": "Rank"
+          },
+          "user_id": {
+            "type": "integer",
+            "title": "User Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "github_username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Github Username"
+          },
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "total_points": {
+            "type": "integer",
+            "title": "Total Points"
+          },
+          "merged_prs": {
+            "type": "integer",
+            "title": "Merged Prs"
+          },
+          "valid_contributions": {
+            "type": "integer",
+            "title": "Valid Contributions"
+          },
+          "claimed_issues": {
+            "type": "integer",
+            "title": "Claimed Issues"
+          }
+        },
+        "type": "object",
+        "required": [
+          "rank",
+          "user_id",
+          "name",
+          "role",
+          "total_points",
+          "merged_prs",
+          "valid_contributions",
+          "claimed_issues"
+        ],
+        "title": "LeaderboardEntry"
+      },
+      "LeaderboardResponse": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "page": {
+            "type": "integer",
+            "title": "Page"
+          },
+          "per_page": {
+            "type": "integer",
+            "title": "Per Page"
+          },
+          "entries": {
+            "items": {
+              "$ref": "#/components/schemas/LeaderboardEntry"
+            },
+            "type": "array",
+            "title": "Entries"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "page",
+          "per_page",
+          "entries"
+        ],
+        "title": "LeaderboardResponse"
+      },
+      "LinkedIssueBrief": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "github_issue_id": {
+            "type": "integer",
+            "title": "Github Issue Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "difficulty": {
+            "type": "string",
+            "title": "Difficulty"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "github_issue_id",
+          "title",
+          "difficulty",
+          "status"
+        ],
+        "title": "LinkedIssueBrief"
+      },
+      "LoginRequest": {
+        "properties": {
+          "identifier": {
+            "type": "string",
+            "title": "Identifier",
+            "description": "PSIT roll number or email address"
+          }
+        },
+        "type": "object",
+        "required": [
+          "identifier"
+        ],
+        "title": "LoginRequest"
+      },
+      "MaintainerDashboardResponse": {
+        "properties": {
+          "maintainer_id": {
+            "type": "integer",
+            "title": "Maintainer Id"
+          },
+          "pending_reviews_count": {
+            "type": "integer",
+            "title": "Pending Reviews Count"
+          },
+          "approved_prs_count": {
+            "type": "integer",
+            "title": "Approved Prs Count"
+          },
+          "changes_requested_count": {
+            "type": "integer",
+            "title": "Changes Requested Count"
+          },
+          "review_queue": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewQueueItem"
+            },
+            "type": "array",
+            "title": "Review Queue",
+            "default": []
+          },
+          "recently_reviewed": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Recently Reviewed",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "maintainer_id",
+          "pending_reviews_count",
+          "approved_prs_count",
+          "changes_requested_count"
+        ],
+        "title": "MaintainerDashboardResponse"
+      },
+      "ManualReviewActionRequest": {
+        "properties": {
+          "action": {
+            "type": "string",
+            "pattern": "^(approve|reject)$",
+            "title": "Action",
+            "description": "'approve' or 'reject'"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason",
+            "description": "Optional admin review note"
+          }
+        },
+        "type": "object",
+        "required": [
+          "action"
+        ],
+        "title": "ManualReviewActionRequest"
+      },
+      "ManualReviewItemResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "psit_roll_no": {
+            "type": "string",
+            "title": "Psit Roll No"
+          },
+          "verified": {
+            "type": "boolean",
+            "title": "Verified"
+          },
+          "id_card_image_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id Card Image Url"
+          },
+          "qr_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qr Token"
+          },
+          "portal_snapshot_json": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Portal Snapshot Json"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "email",
+          "psit_roll_no",
+          "verified",
+          "created_at"
+        ],
+        "title": "ManualReviewItemResponse"
+      },
+      "NotificationListResponse": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "unread_count": {
+            "type": "integer",
+            "title": "Unread Count"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/NotificationResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "unread_count",
+          "items"
+        ],
+        "title": "NotificationListResponse"
+      },
+      "NotificationMarkReadResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "read": {
+            "type": "boolean",
+            "title": "Read"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "read",
+          "message"
+        ],
+        "title": "NotificationMarkReadResponse"
+      },
+      "NotificationReadAllResponse": {
+        "properties": {
+          "updated_count": {
+            "type": "integer",
+            "title": "Updated Count"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "updated_count",
+          "message"
+        ],
+        "title": "NotificationReadAllResponse"
+      },
+      "NotificationResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "user_id": {
+            "type": "integer",
+            "title": "User Id"
+          },
+          "type": {
+            "type": "string",
+            "title": "Type"
+          },
+          "payload": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Payload"
+          },
+          "read": {
+            "type": "boolean",
+            "title": "Read"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "user_id",
+          "type",
+          "payload",
+          "read",
+          "created_at"
+        ],
+        "title": "NotificationResponse"
+      },
+      "PRListResponse": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "skip": {
+            "type": "integer",
+            "title": "Skip"
+          },
+          "limit": {
+            "type": "integer",
+            "title": "Limit"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PRResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total",
+          "skip",
+          "limit",
+          "items"
+        ],
+        "title": "PRListResponse"
+      },
+      "PRResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "repo_id": {
+            "type": "integer",
+            "title": "Repo Id"
+          },
+          "github_pr_id": {
+            "type": "integer",
+            "title": "Github Pr Id"
+          },
+          "issue_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issue Id"
+          },
+          "user_id": {
+            "type": "integer",
+            "title": "User Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "status": {
+            "$ref": "#/components/schemas/PRStatus"
+          },
+          "reviewer_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewer Id"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          },
+          "user": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClaimUserBrief"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reviewer": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClaimUserBrief"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "repository": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RepositoryBrief"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "linked_issue": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LinkedIssueBrief"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reviews": {
+            "items": {
+              "$ref": "#/components/schemas/ReviewDetail"
+            },
+            "type": "array",
+            "title": "Reviews",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "repo_id",
+          "github_pr_id",
+          "user_id",
+          "title",
+          "status",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "PRResponse"
+      },
+      "PRStatus": {
+        "type": "string",
+        "enum": [
+          "open",
+          "merged",
+          "closed",
+          "draft"
+        ],
+        "title": "PRStatus"
+      },
+      "RepositoryBrief": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "platform": {
+            "type": "string",
+            "title": "Platform"
+          },
+          "github_repo_url": {
+            "type": "string",
+            "title": "Github Repo Url"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "platform",
+          "github_repo_url"
+        ],
+        "title": "RepositoryBrief"
+      },
+      "RepositoryDashboardResponse": {
+        "properties": {
+          "repository": {
+            "$ref": "#/components/schemas/RepositoryBrief"
+          },
+          "total_issues": {
+            "type": "integer",
+            "title": "Total Issues"
+          },
+          "open_issues": {
+            "type": "integer",
+            "title": "Open Issues"
+          },
+          "claimed_issues": {
+            "type": "integer",
+            "title": "Claimed Issues"
+          },
+          "closed_issues": {
+            "type": "integer",
+            "title": "Closed Issues"
+          },
+          "total_prs": {
+            "type": "integer",
+            "title": "Total Prs"
+          },
+          "open_prs": {
+            "type": "integer",
+            "title": "Open Prs"
+          },
+          "merged_prs": {
+            "type": "integer",
+            "title": "Merged Prs"
+          },
+          "total_commits": {
+            "type": "integer",
+            "title": "Total Commits"
+          },
+          "unique_contributors_count": {
+            "type": "integer",
+            "title": "Unique Contributors Count"
+          },
+          "recent_activity": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "type": "array",
+            "title": "Recent Activity",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "repository",
+          "total_issues",
+          "open_issues",
+          "claimed_issues",
+          "closed_issues",
+          "total_prs",
+          "open_prs",
+          "merged_prs",
+          "total_commits",
+          "unique_contributors_count"
+        ],
+        "title": "RepositoryDashboardResponse"
+      },
+      "ReviewDetail": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "pr_id": {
+            "type": "integer",
+            "title": "Pr Id"
+          },
+          "reviewer_id": {
+            "type": "integer",
+            "title": "Reviewer Id"
+          },
+          "reviewer_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reviewer Name"
+          },
+          "status": {
+            "$ref": "#/components/schemas/ReviewStatus"
+          },
+          "comment": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comment"
+          },
+          "reviewed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Reviewed At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "pr_id",
+          "reviewer_id",
+          "status",
+          "reviewed_at"
+        ],
+        "title": "ReviewDetail"
+      },
+      "ReviewQueueItem": {
+        "properties": {
+          "pr_id": {
+            "type": "integer",
+            "title": "Pr Id"
+          },
+          "github_pr_id": {
+            "type": "integer",
+            "title": "Github Pr Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "repo_name": {
+            "type": "string",
+            "title": "Repo Name"
+          },
+          "contributor_name": {
+            "type": "string",
+            "title": "Contributor Name"
+          },
+          "contributor_roll_no": {
+            "type": "string",
+            "title": "Contributor Roll No"
+          },
+          "github_username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Github Username"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "review_status": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Review Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "pr_id",
+          "github_pr_id",
+          "title",
+          "repo_name",
+          "contributor_name",
+          "contributor_roll_no",
+          "created_at",
+          "status"
+        ],
+        "title": "ReviewQueueItem"
+      },
+      "ReviewStatus": {
+        "type": "string",
+        "enum": [
+          "approved",
+          "changes_requested",
+          "commented",
+          "dismissed"
+        ],
+        "title": "ReviewStatus"
+      },
+      "SearchCommitResult": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "repo_id": {
+            "type": "integer",
+            "title": "Repo Id"
+          },
+          "repo_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repo Name"
+          },
+          "github_commit_sha": {
+            "type": "string",
+            "title": "Github Commit Sha"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "committed_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Committed At"
+          },
+          "author_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author Name"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "repo_id",
+          "github_commit_sha",
+          "message",
+          "committed_at"
+        ],
+        "title": "SearchCommitResult"
+      },
+      "SearchIssueResult": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "repo_id": {
+            "type": "integer",
+            "title": "Repo Id"
+          },
+          "repo_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repo Name"
+          },
+          "github_issue_id": {
+            "type": "integer",
+            "title": "Github Issue Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "difficulty": {
+            "type": "string",
+            "title": "Difficulty"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "tech_tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tech Tags",
+            "default": []
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "repo_id",
+          "github_issue_id",
+          "title",
+          "difficulty",
+          "status"
+        ],
+        "title": "SearchIssueResult"
+      },
+      "SearchPRResult": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "repo_id": {
+            "type": "integer",
+            "title": "Repo Id"
+          },
+          "repo_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repo Name"
+          },
+          "github_pr_id": {
+            "type": "integer",
+            "title": "Github Pr Id"
+          },
+          "title": {
+            "type": "string",
+            "title": "Title"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "author_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author Id"
+          },
+          "author_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author Name"
+          },
+          "author_github": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Author Github"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "repo_id",
+          "github_pr_id",
+          "title",
+          "status"
+        ],
+        "title": "SearchPRResult"
+      },
+      "SearchRepoResult": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "github_repo_url": {
+            "type": "string",
+            "title": "Github Repo Url"
+          },
+          "platform": {
+            "type": "string",
+            "title": "Platform"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "github_repo_url",
+          "platform"
+        ],
+        "title": "SearchRepoResult"
+      },
+      "SearchUserResult": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "github_username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Github Username"
+          },
+          "avatar_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avatar Url"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "role"
+        ],
+        "title": "SearchUserResult"
+      },
+      "SignupRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 2,
+            "title": "Name",
+            "description": "Full student name as on PSIT ID card"
+          },
+          "email": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 5,
+            "title": "Email",
+            "description": "Student email address"
+          },
+          "psit_roll_no": {
+            "type": "string",
+            "maxLength": 50,
+            "minLength": 2,
+            "title": "Psit Roll No",
+            "description": "Official PSIT roll number"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "email",
+          "psit_roll_no"
+        ],
+        "title": "SignupRequest"
+      },
+      "SignupResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "psit_roll_no": {
+            "type": "string",
+            "title": "Psit Roll No"
+          },
+          "role": {
+            "$ref": "#/components/schemas/UserRole"
+          },
+          "verified": {
+            "type": "boolean",
+            "title": "Verified"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "pending_verification"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "email",
+          "psit_roll_no",
+          "role",
+          "verified",
+          "created_at"
+        ],
+        "title": "SignupResponse"
+      },
+      "StudentDashboardResponse": {
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "title": "User Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "psit_roll_no": {
+            "type": "string",
+            "title": "Psit Roll No"
+          },
+          "github_username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Github Username"
+          },
+          "verified": {
+            "type": "boolean",
+            "title": "Verified"
+          },
+          "active_claims_count": {
+            "type": "integer",
+            "title": "Active Claims Count"
+          },
+          "prs_submitted_count": {
+            "type": "integer",
+            "title": "Prs Submitted Count"
+          },
+          "prs_merged_count": {
+            "type": "integer",
+            "title": "Prs Merged Count"
+          },
+          "valid_contributions_count": {
+            "type": "integer",
+            "title": "Valid Contributions Count"
+          },
+          "active_claims": {
+            "items": {
+              "$ref": "#/components/schemas/ActiveClaimSummary"
+            },
+            "type": "array",
+            "title": "Active Claims",
+            "default": []
+          },
+          "recent_prs": {
+            "items": {
+              "$ref": "#/components/schemas/PRResponse"
+            },
+            "type": "array",
+            "title": "Recent Prs",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id",
+          "name",
+          "psit_roll_no",
+          "verified",
+          "active_claims_count",
+          "prs_submitted_count",
+          "prs_merged_count",
+          "valid_contributions_count"
+        ],
+        "title": "StudentDashboardResponse"
+      },
+      "TokenResponse": {
+        "properties": {
+          "access_token": {
+            "type": "string",
+            "title": "Access Token"
+          },
+          "token_type": {
+            "type": "string",
+            "title": "Token Type",
+            "default": "bearer"
+          },
+          "expires_in": {
+            "type": "integer",
+            "title": "Expires In"
+          },
+          "user": {
+            "$ref": "#/components/schemas/UserProfileResponse"
+          }
+        },
+        "type": "object",
+        "required": [
+          "access_token",
+          "expires_in",
+          "user"
+        ],
+        "title": "TokenResponse"
+      },
+      "UnifiedSearchResponse": {
+        "properties": {
+          "query": {
+            "type": "string",
+            "title": "Query"
+          },
+          "total_results": {
+            "type": "integer",
+            "title": "Total Results"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/components/schemas/SearchIssueResult"
+            },
+            "type": "array",
+            "title": "Issues",
+            "default": []
+          },
+          "pull_requests": {
+            "items": {
+              "$ref": "#/components/schemas/SearchPRResult"
+            },
+            "type": "array",
+            "title": "Pull Requests",
+            "default": []
+          },
+          "contributors": {
+            "items": {
+              "$ref": "#/components/schemas/SearchUserResult"
+            },
+            "type": "array",
+            "title": "Contributors",
+            "default": []
+          },
+          "repositories": {
+            "items": {
+              "$ref": "#/components/schemas/SearchRepoResult"
+            },
+            "type": "array",
+            "title": "Repositories",
+            "default": []
+          },
+          "commits": {
+            "items": {
+              "$ref": "#/components/schemas/SearchCommitResult"
+            },
+            "type": "array",
+            "title": "Commits",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "query",
+          "total_results"
+        ],
+        "title": "UnifiedSearchResponse"
+      },
+      "UserContributionTimelineResponse": {
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "title": "User Id"
+          },
+          "user": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ClaimUserBrief"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "total_contributions": {
+            "type": "integer",
+            "title": "Total Contributions"
+          },
+          "valid_contributions_count": {
+            "type": "integer",
+            "title": "Valid Contributions Count"
+          },
+          "merged_count": {
+            "type": "integer",
+            "title": "Merged Count"
+          },
+          "in_progress_count": {
+            "type": "integer",
+            "title": "In Progress Count"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/ContributionResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "user_id",
+          "total_contributions",
+          "valid_contributions_count",
+          "merged_count",
+          "in_progress_count",
+          "items"
+        ],
+        "title": "UserContributionTimelineResponse"
+      },
+      "UserProfileResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "email": {
+            "type": "string",
+            "title": "Email"
+          },
+          "psit_roll_no": {
+            "type": "string",
+            "title": "Psit Roll No"
+          },
+          "verified": {
+            "type": "boolean",
+            "title": "Verified"
+          },
+          "verified_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Verified At"
+          },
+          "verification_method": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VerificationMethod"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "github_username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Github Username"
+          },
+          "github_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Github Id"
+          },
+          "role": {
+            "$ref": "#/components/schemas/UserRole"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "email",
+          "psit_roll_no",
+          "verified",
+          "role",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "UserProfileResponse"
+      },
+      "UserPublicProfileResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "github_username": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Github Username"
+          },
+          "role": {
+            "$ref": "#/components/schemas/UserRole"
+          },
+          "verified": {
+            "type": "boolean",
+            "title": "Verified"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          },
+          "contributions_count": {
+            "type": "integer",
+            "title": "Contributions Count"
+          },
+          "merged_prs_count": {
+            "type": "integer",
+            "title": "Merged Prs Count"
+          },
+          "active_claims_count": {
+            "type": "integer",
+            "title": "Active Claims Count"
+          },
+          "recent_contributions": {
+            "items": {
+              "$ref": "#/components/schemas/ContributionResponse"
+            },
+            "type": "array",
+            "title": "Recent Contributions",
+            "default": []
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "role",
+          "verified",
+          "created_at",
+          "contributions_count",
+          "merged_prs_count",
+          "active_claims_count"
+        ],
+        "title": "UserPublicProfileResponse"
+      },
+      "UserRole": {
+        "type": "string",
+        "enum": [
+          "student",
+          "maintainer",
+          "admin"
+        ],
+        "title": "UserRole"
+      },
+      "UserUpdateProfileRequest": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255,
+                "minLength": 2
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "github_username": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Github Username"
+          }
+        },
+        "type": "object",
+        "title": "UserUpdateProfileRequest"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "VerificationMethod": {
+        "type": "string",
+        "enum": [
+          "qr_auto",
+          "manual"
+        ],
+        "title": "VerificationMethod"
+      },
+      "VerifyIDCardRequest": {
+        "properties": {
+          "psit_roll_no": {
+            "type": "string",
+            "title": "Psit Roll No",
+            "description": "Student roll number to verify"
+          },
+          "qr_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qr Token",
+            "description": "Decoded QR payload from ID card"
+          },
+          "id_card_image_base64": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id Card Image Base64",
+            "description": "Base64-encoded ID card photo"
+          },
+          "portal_snapshot": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Portal Snapshot",
+            "description": "PSIT portal student record"
+          }
+        },
+        "type": "object",
+        "required": [
+          "psit_roll_no"
+        ],
+        "title": "VerifyIDCardRequest"
+      },
+      "VerifyIDCardResponse": {
+        "properties": {
+          "verified": {
+            "type": "boolean",
+            "title": "Verified"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "verification_method": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VerificationMethod"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "verified",
+          "status",
+          "message"
+        ],
+        "title": "VerifyIDCardResponse"
+      },
+      "WebhookResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "event": {
+            "type": "string",
+            "title": "Event"
+          },
+          "action": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Action"
+          },
+          "detail": {
+            "type": "string",
+            "title": "Detail"
+          },
+          "data": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "event",
+          "detail"
+        ],
+        "title": "WebhookResponse"
+      }
+    }
+  }
+}
