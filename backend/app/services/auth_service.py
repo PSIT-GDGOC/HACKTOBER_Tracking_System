@@ -282,10 +282,32 @@ async def process_id_card_verification(
         ), None
 
     # Store the decoded QR token (private — stripped from public API responses)
-    user.qr_token = qr_token
+    clean_token = qr_token.strip().lower()
+    user.qr_token = clean_token
     clean_user_roll = user.psit_roll_no.strip().upper()
 
-    # ── Guard: Roll number uniqueness check against verified accounts ───
+    # ── Guard 1: ID Card QR uniqueness check against verified accounts ──
+    dup_qr = (
+        db.query(User)
+        .filter(
+            User.qr_token.ilike(clean_token),
+            User.verified == True,
+            User.id != user.id,
+        )
+        .first()
+    )
+    if dup_qr:
+        logger.warning(
+            "ID card QR code '%s' is already verified under another account (id=%s, roll=%s).",
+            clean_token, dup_qr.id, dup_qr.psit_roll_no
+        )
+        _commit_pending(db, user, f"This PSIT ID card is already registered and verified under roll number '{dup_qr.psit_roll_no}'.")
+        return False, "duplicate_verified_card", (
+            f"This PSIT ID card has already been verified under another student account (Roll No: {dup_qr.psit_roll_no}). "
+            "Each official PSIT ID card can only be used to verify a single student account."
+        ), qr_token
+
+    # ── Guard 2: Roll number uniqueness check against verified accounts ───
     dup = (
         db.query(User)
         .filter(
@@ -414,6 +436,22 @@ def review_manual_verification(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Cannot approve: roll number '{clean_roll}' is already verified under another account (user ID {dup.id}).",
             )
+        if student.qr_token:
+            clean_tok = student.qr_token.strip().lower()
+            dup_qr = (
+                db.query(User)
+                .filter(
+                    User.qr_token.ilike(clean_tok),
+                    User.verified == True,
+                    User.id != student.id,
+                )
+                .first()
+            )
+            if dup_qr:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Cannot approve: ID card QR code is already verified under roll number '{dup_qr.psit_roll_no}' (user ID {dup_qr.id}).",
+                )
         student.verified = True
         student.verification_method = VerificationMethod.MANUAL
         student.verified_at = datetime.now(timezone.utc)

@@ -397,11 +397,15 @@ export function AuthWizard() {
       {/* ---------------- 3 · result ---------------- */}
       {step === 3 && (
         <>
-          <Sticker tone={verifyResult?.verified ? "green" : "yellow"} rotate="-2">
+          <Sticker tone={verifyResult?.verified ? "green" : (verifyResult?.status?.startsWith("duplicate") ? "red" : "yellow")} rotate="-2">
             Step 3 of 3
           </Sticker>
           <h1 className="mt-4 font-display text-3xl font-extrabold uppercase leading-none tracking-tight">
-            {verifyResult?.verified ? "You're verified ✓" : "Verification Required"}
+            {verifyResult?.verified
+              ? "You're verified ✓"
+              : verifyResult?.status?.startsWith("duplicate")
+              ? "ID Card Already Registered"
+              : "Verification Required"}
           </h1>
 
           {verifyResult?.verified ? (
@@ -410,9 +414,15 @@ export function AuthWizard() {
               <p className="mt-1 text-sm leading-relaxed text-ink-soft">{verifyResult.message}</p>
             </div>
           ) : (
-            <div className="mt-5 border-[3px] border-ink bg-gyellow-light p-5 shadow-[5px_5px_0_0_#101010]">
-              <p className="font-display text-sm font-extrabold uppercase text-ink">
-                {verifyResult?.status === "qr_unreadable" ? "QR Code Unreadable" : "Pending Admin Verification"}
+            <div className={`mt-5 border-[3px] border-ink p-5 shadow-[5px_5px_0_0_#101010] ${verifyResult?.status?.startsWith("duplicate") ? "bg-red-50" : "bg-gyellow-light"}`}>
+              <p className={`font-display text-sm font-extrabold uppercase ${verifyResult?.status?.startsWith("duplicate") ? "text-gred" : "text-ink"}`}>
+                {verifyResult?.status === "qr_unreadable"
+                  ? "QR Code Unreadable"
+                  : verifyResult?.status === "duplicate_verified_card"
+                  ? "PSIT ID Card Already Registered"
+                  : verifyResult?.status === "duplicate_verified_roll"
+                  ? "Roll Number Already Verified"
+                  : "Pending Admin Verification"}
               </p>
               <p className="mt-2 text-sm leading-relaxed text-ink">
                 {verifyResult?.message || "Your ID card could not be verified automatically. Access to the dashboard is locked until your student identity is verified."}
@@ -428,7 +438,7 @@ export function AuthWizard() {
                     setStep(2);
                   }}
                 >
-                  ↺ Try Re-uploading Clearer Photo
+                  {verifyResult?.status?.startsWith("duplicate") ? "↺ Upload Different ID Card" : "↺ Try Re-uploading Clearer Photo"}
                 </Button>
                 <Link
                   to="/login"

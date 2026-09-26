@@ -338,6 +338,60 @@ def test_id_card_pending_review_on_portal_mismatch(client_and_db):
     assert updated.verification_method is None
 
 
+def test_id_card_duplicate_qr_code_rejected(client_and_db):
+    """
+    Prevent one PSIT ID card from verifying multiple student accounts.
+    If the same QR token is scanned for a second account, it must be rejected.
+    """
+    client, db = client_and_db
+
+    shared_token_hex = "abcdef1234567890abcdef1234567890"
+
+    # User 1: already verified with this ID card QR token
+    user1 = User(
+        id=70,
+        name="Original Student",
+        email="original@psit.ac.in",
+        psit_roll_no="2200320100070",
+        role=UserRole.STUDENT,
+        qr_token=shared_token_hex,
+        verified=True,
+    )
+    # User 2: tries to verify using the exact same ID card QR token
+    user2 = User(
+        id=71,
+        name="Second Account",
+        email="second@psit.ac.in",
+        psit_roll_no="2200320100071",
+        role=UserRole.STUDENT,
+        verified=False,
+    )
+    db.add(user1)
+    db.add(user2)
+    db.commit()
+
+    with patch("app.services.auth_service.decode_qr_from_image", return_value=shared_token_hex):
+        res = client.post(
+            "/auth/verify-id",
+            json={
+                "psit_roll_no": "2200320100071",
+                "id_card_image_base64": _create_dummy_image_b64(),
+            },
+            headers={"X-User-Id": "71"},
+        )
+
+    assert res.status_code == 200
+    data = res.json()
+    assert data["verified"] is False
+    assert data["status"] == "duplicate_verified_card"
+    assert "already been verified" in data["message"]
+
+    # Verify User 2 was NOT verified in the database
+    db.expire_all()
+    updated_user2 = db.query(User).filter(User.id == 71).first()
+    assert updated_user2.verified is False
+
+
 def test_id_card_qr_unreadable_fallback(client_and_db):
     """
     When QR code cannot be decoded from the photo, student is routed

@@ -27,6 +27,13 @@ class User(Base):
             postgresql_where=text("verified = TRUE"),
             sqlite_where=text("verified = 1"),
         ),
+        Index(
+            "ix_users_verified_qr_token",
+            "qr_token",
+            unique=True,
+            postgresql_where=text("verified = TRUE AND qr_token IS NOT NULL"),
+            sqlite_where=text("verified = 1 AND qr_token IS NOT NULL"),
+        ),
     )
 
     id = Column(Integer, primary_key=True, index=True)
