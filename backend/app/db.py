@@ -11,9 +11,12 @@ if settings.db_url.startswith("sqlite"):
         connect_args={"check_same_thread": False},
     )
 else:
-    # Supabase free tier allows ~50 connections; pool_size=5 is conservative and safe.
+    # SQLAlchemy 2.x defaults to psycopg (v3) for postgresql:// URLs.
+    # We use psycopg2-binary, so explicitly set the dialect to postgresql+psycopg2://.
+    _pg_url = settings.db_url.replace("postgresql://", "postgresql+psycopg2://", 1) \
+                              .replace("postgres://", "postgresql+psycopg2://", 1)
     engine = create_engine(
-        settings.db_url,      # Uses property that rewrites postgres:// -> postgresql://
+        _pg_url,
         echo=settings.DEBUG,  # Only logs SQL in local dev when DEBUG=True
         pool_pre_ping=True,   # Validates connections before use (handles Supabase idle timeouts)
         pool_size=5,          # Persistent connections in pool
