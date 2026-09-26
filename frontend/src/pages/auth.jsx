@@ -109,7 +109,7 @@ export function AuthWizard() {
 
   /* github */
   const [githubUsername, setGithubUsername] = useState("");
-  const linkGithub = useMutation(api.linkGithub);
+  const [linkingGithub, setLinkingGithub] = useState(false);
   const [linked, setLinked] = useState(false);
 
   /* password setup */
@@ -246,11 +246,16 @@ export function AuthWizard() {
     const username = githubUsername.trim().replace(/^@/, "");
     if (!username) return setError("Enter your GitHub username.");
     setError(null);
-    const res = await linkGithub.mutate({ github_username: username });
-    if (res) {
-      setLinked(true);
-    } else if (linkGithub.error) {
-      setError(linkGithub.error);
+    setLinkingGithub(true);
+    try {
+      const res = await api.linkGithub({ github_username: username });
+      if (res) {
+        setLinked(true);
+      }
+    } catch (err) {
+      setError(err?.detail || err?.message || "Failed to link GitHub account.");
+    } finally {
+      setLinkingGithub(false);
     }
   };
 
@@ -583,7 +588,7 @@ export function AuthWizard() {
                   </Field>
                   {error && <p className="font-mono text-xs font-bold text-gred">▲ {error}</p>}
                   <div className="flex flex-wrap gap-3">
-                    <Button type="submit" variant="ink" loading={linkGithub.pending}>Link account</Button>
+                    <Button type="submit" variant="ink" loading={linkingGithub}>Link account</Button>
                     <Button
                       type="button"
                       variant="paper"

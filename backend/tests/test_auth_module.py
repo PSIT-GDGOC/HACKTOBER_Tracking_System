@@ -581,3 +581,54 @@ def test_github_oauth_linking(client_and_db):
     updated = db.query(User).filter(User.id == 30).first()
     assert updated.github_username == "sanjay-coder"
     assert updated.github_id == "987654"
+
+
+def test_github_link_validates_existence(client_and_db):
+    """Attempting to link a non-existent GitHub account returns 400."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+    client, db = client_and_db
+
+    student = User(
+        id=35,
+        name="Existence Tester",
+        email="exists@psit.ac.in",
+        psit_roll_no="2200330100099",
+        role=UserRole.STUDENT,
+        verified=True,
+    )
+    db.add(student)
+    db.commit()
+
+    # Case 1: GitHub returns 404 -> Rejected
+    mock_404_resp = MagicMock()
+    mock_404_resp.status_code = 404
+    mock_client_404 = AsyncMock()
+    mock_client_404.__aenter__.return_value.get.return_value = mock_404_resp
+
+    with patch("httpx.AsyncClient", return_value=mock_client_404):
+        res_404 = client.post(
+            "/auth/github/link",
+            json={"github_username": "fake-nonexistent-user-12345"},
+            headers={"X-User-Id": "35"},
+        )
+    assert res_404.status_code == 400
+    assert "was not found on GitHub" in res_404.json()["detail"]
+
+    # Case 2: GitHub returns 200 -> Accepted and github_id populated
+    mock_200_resp = MagicMock()
+    mock_200_resp.status_code = 200
+    mock_200_resp.json.return_value = {"login": "real-dev", "id": 54321}
+    mock_client_200 = AsyncMock()
+    mock_client_200.__aenter__.return_value.get.return_value = mock_200_resp
+
+    with patch("httpx.AsyncClient", return_value=mock_client_200):
+        res_200 = client.post(
+            "/auth/github/link",
+            json={"github_username": "real-dev"},
+            headers={"X-User-Id": "35"},
+        )
+    assert res_200.status_code == 200
+    assert res_200.json()["success"] is True
+    assert res_200.json()["github_username"] == "real-dev"
+    assert res_200.json()["github_id"] == "54321"
+
