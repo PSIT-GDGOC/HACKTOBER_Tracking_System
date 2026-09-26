@@ -41,8 +41,8 @@ export function AuthProvider({ children }) {
     };
   }, []);
 
-  const login = useCallback(async (identifier) => {
-    const session = await api.login({ identifier });
+  const login = useCallback(async (identifier, password) => {
+    const session = await api.login({ identifier, password: password || undefined });
     tokenStore.set(session.access_token, session.expires_in);
     setUser(session.user);
     return session.user;
@@ -99,6 +99,9 @@ export function RequireRole({ roles, children }) {
   const location = useLocation();
   if (loading) return <AuthBootLoader />;
   if (!isAuthenticated) return <Navigate to="/login" state={{ from: location.pathname }} replace />;
+  if (user && user.role === "student" && !user.verified) {
+    return <Navigate to="/join" state={{ from: location.pathname }} replace />;
+  }
   if (roles && user && !roles.includes(user.role)) return <Navigate to="/dashboard/403" replace />;
   return <>{children}</>;
 }

@@ -20,8 +20,10 @@ Verification flow (end-to-end):
 """
 import base64
 import difflib
+import hashlib
 import io
 import logging
+import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple, Dict, Any, List
@@ -81,29 +83,56 @@ def decode_access_token(token: str) -> dict:
 def register_student(db: Session, name: str, email: str, psit_roll_no: str) -> User:
     """Register a new student in unverified state.
 
-    Roll number validation (exactly 13 alphanumeric chars) is enforced by the
-    Pydantic schema (SignupRequest.validate_roll_number) before this is called.
+    Only verified accounts are considered 'taken'. Unverified or pending
+    attempts never block a student from registering or retrying signup.
     """
     clean_roll = psit_roll_no.strip().upper()
     clean_email = email.strip().lower()
     clean_name = name.strip()
 
-    # 1. Check duplicate roll number
-    existing_roll = db.query(User).filter(User.psit_roll_no.ilike(clean_roll)).first()
-    if existing_roll:
+    # 1. Check duplicate roll number — ONLY against VERIFIED accounts
+    verified_roll = (
+        db.query(User)
+        .filter(User.psit_roll_no.ilike(clean_roll), User.verified == True)
+        .first()
+    )
+    if verified_roll:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"A student with roll number '{clean_roll}' is already registered."
+            detail=f"A verified student with roll number '{clean_roll}' is already registered. Please log in instead.",
         )
 
-    # 2. Check duplicate email
-    existing_email = db.query(User).filter(User.email.ilike(clean_email)).first()
-    if existing_email:
+    # 2. Check duplicate email — ONLY against VERIFIED accounts
+    verified_email = (
+        db.query(User)
+        .filter(User.email.ilike(clean_email), User.verified == True)
+        .first()
+    )
+    if verified_email:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"A student with email '{clean_email}' is already registered."
+            detail=f"A verified student with email '{clean_email}' is already registered. Please log in instead.",
         )
 
+    # 3. If an unverified pending account exists with this email or roll, reuse/update it
+    pending_user = (
+        db.query(User)
+        .filter(
+            (User.email.ilike(clean_email)) | (User.psit_roll_no.ilike(clean_roll)),
+            User.verified == False,
+        )
+        .first()
+    )
+    if pending_user:
+        pending_user.name = clean_name
+        pending_user.email = clean_email
+        pending_user.psit_roll_no = clean_roll
+        db.commit()
+        db.refresh(pending_user)
+        logger.info("Reused pending unverified account (id=%s) for %s", pending_user.id, clean_roll)
+        return pending_user
+
+    # 4. Otherwise, create a new pending unverified record
     new_user = User(
         name=clean_name,
         email=clean_email,
@@ -119,8 +148,56 @@ def register_student(db: Session, name: str, email: str, psit_roll_no: str) -> U
     return new_user
 
 
-def authenticate_user(db: Session, identifier: str) -> User:
-    """Find user by roll number or email."""
+def hash_password(password: str) -> str:
+    """Hash password using PBKDF2-HMAC-SHA256 with 16-byte random salt and 100,000 iterations."""
+    salt = secrets.token_hex(16)
+    key = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), bytes.fromhex(salt), 100_000)
+    return f"{salt}:{key.hex()}"
+
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verify password against stored salt:hash string."""
+    try:
+        salt, stored_hash = hashed_password.split(":")
+        key = hashlib.pbkdf2_hmac("sha256", plain_password.encode("utf-8"), bytes.fromhex(salt), 100_000)
+        return secrets.compare_digest(key.hex(), stored_hash)
+    except Exception:
+        return False
+
+
+def validate_password_strength(password: str) -> None:
+    """Validate that password meets security requirements (min 8 chars, at least 1 letter & 1 digit/symbol)."""
+    if len(password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must be at least 8 characters long."
+        )
+    if len(password) > 128:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must not exceed 128 characters."
+        )
+    has_letter = any(c.isalpha() for c in password)
+    has_non_letter = any(not c.isalpha() for c in password)
+    if not (has_letter and has_non_letter):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must contain at least one letter and one number or special character."
+        )
+
+
+def set_user_password(db: Session, user: User, password: str) -> User:
+    """Set or update user's account password."""
+    validate_password_strength(password)
+    user.password_hash = hash_password(password)
+    db.commit()
+    db.refresh(user)
+    logger.info("Password set successfully for user %s (id=%s).", user.psit_roll_no, user.id)
+    return user
+
+
+def authenticate_user(db: Session, identifier: str, password: Optional[str] = None) -> User:
+    """Find user by roll number or email and verify password if set."""
     clean_id = identifier.strip()
     user = (
         db.query(User)
@@ -134,6 +211,15 @@ def authenticate_user(db: Session, identifier: str) -> User:
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"No account found matching identifier '{identifier}'."
         )
+
+    # If the user has a password configured, strictly verify it
+    if user.password_hash:
+        if not password or not verify_password(password, user.password_hash):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid roll number or password."
+            )
+
     return user
 
 
@@ -255,70 +341,97 @@ async def process_id_card_verification(
         ), None
 
     # Store the decoded QR token (private — stripped from public API responses)
-    user.qr_token = qr_token
+    clean_token = qr_token.strip().lower()
+    user.qr_token = clean_token
+    clean_user_roll = user.psit_roll_no.strip().upper()
 
-    # ── Step 4: Fetch student data from PSIT portal ───────────────────
+    # ── Guard 1: ID Card QR uniqueness check against verified accounts ──
+    dup_qr = (
+        db.query(User)
+        .filter(
+            User.qr_token.ilike(clean_token),
+            User.verified == True,
+            User.id != user.id,
+        )
+        .first()
+    )
+    if dup_qr:
+        logger.warning(
+            "ID card QR code '%s' is already verified under another account (id=%s, roll=%s).",
+            clean_token, dup_qr.id, dup_qr.psit_roll_no
+        )
+        _commit_pending(db, user, f"This PSIT ID card is already registered and verified under roll number '{dup_qr.psit_roll_no}'.")
+        return False, "duplicate_verified_card", (
+            f"This PSIT ID card has already been verified under another student account (Roll No: {dup_qr.psit_roll_no}). "
+            "Each official PSIT ID card can only be used to verify a single student account."
+        ), qr_token
+
+    # ── Guard 2: Roll number uniqueness check against verified accounts ───
+    dup = (
+        db.query(User)
+        .filter(
+            User.psit_roll_no.ilike(clean_user_roll),
+            User.verified == True,
+            User.id != user.id,
+        )
+        .first()
+    )
+    if dup:
+        logger.warning(
+            "Roll number '%s' is already verified under another account (id=%s).",
+            clean_user_roll, dup.id
+        )
+        _commit_pending(db, user, f"Roll number '{clean_user_roll}' is already verified under another account.")
+        return False, "duplicate_verified_roll", (
+            f"This roll number '{clean_user_roll}' is already verified under another account. "
+            "Each PSIT student roll number can only be verified once."
+        ), qr_token
+
+    # ── Step 4: Optional PSIT portal lookup for snapshot ──────────────
     portal_data: Optional[Dict[str, Any]] = None
     try:
         portal_data = await fetch_psit_student_data(qr_token)
     except Exception as exc:
-        logger.error("Unexpected error fetching PSIT portal data for token %s: %s", qr_token, exc)
+        logger.debug("PSIT portal lookup error for token %s: %s", qr_token, exc)
 
-    if portal_data is None:
-        logger.info(
-            "PSIT portal returned no data for token %s (user %s). Routing to manual review.",
-            qr_token, user.psit_roll_no
-        )
-        _commit_pending(db, user, "PSIT portal did not return usable student data.")
-        return False, "portal_unavailable", (
-            "Your QR code was successfully read, but our system could not retrieve your "
-            "details from the PSIT portal right now. Your account has been added to the "
-            "admin manual review queue. Expected turnaround: under 24 hours."
-        ), qr_token
+    if portal_data:
+        user.portal_snapshot_json = portal_data.get("_raw", portal_data)
+        portal_roll = portal_data.get("roll_no", "").strip().upper()
+        portal_name = portal_data.get("student_name", "").strip()
 
-    # Store portal snapshot (private; never exposed in public API responses)
-    user.portal_snapshot_json = portal_data.get("_raw", portal_data)
+        roll_matched = (portal_roll == clean_user_roll) if portal_roll else True
+        name_matched = _fuzzy_name_match(user.name, portal_name) if portal_name else True
 
-    # ── Step 5: Cross-check roll number & name ────────────────────────
-    portal_roll = portal_data.get("roll_no", "").strip().upper()
-    portal_name = portal_data.get("student_name", "").strip()
+        if not roll_matched or not name_matched:
+            mismatch_detail = []
+            if not roll_matched:
+                mismatch_detail.append(
+                    f"Roll number mismatch: registered '{clean_user_roll}', card belongs to '{portal_roll}'."
+                )
+            if not name_matched:
+                mismatch_detail.append(
+                    f"Name mismatch: registered '{user.name}', card belongs to '{portal_name}'."
+                )
+            detail_str = " ".join(mismatch_detail)
+            _commit_pending(db, user, detail_str)
+            return False, "pending_review", (
+                "Your ID card was scanned but the details on the card don't match "
+                "what you registered with. Your account has been added to the admin manual "
+                "review queue. Expected turnaround: under 24 hours."
+            ), qr_token
 
-    roll_matched = portal_roll == user.psit_roll_no.strip().upper()
-    name_matched = _fuzzy_name_match(user.name, portal_name) if portal_name else False
-
-    if roll_matched and name_matched:
-        # ── Auto-verified ─────────────────────────────────────────────
-        user.verified = True
-        user.verification_method = VerificationMethod.QR_AUTO
-        user.verified_at = datetime.now(timezone.utc)
-        db.commit()
-        db.refresh(user)
-        logger.info("User %s auto-verified via PSIT portal QR check.", user.psit_roll_no)
-        return True, "auto_verified", (
-            "Your PSIT ID card was verified successfully. "
-            "You can now link your GitHub account and start claiming issues."
-        ), qr_token
-    else:
-        # ── Mismatch → manual review ──────────────────────────────────
-        mismatch_detail = []
-        if not roll_matched:
-            mismatch_detail.append(
-                f"Roll number mismatch: registered '{user.psit_roll_no}', portal returned '{portal_roll}'."
-            )
-        if not name_matched:
-            mismatch_detail.append(
-                f"Name mismatch: registered '{user.name}', portal returned '{portal_name}'."
-            )
-        detail_str = " ".join(mismatch_detail)
-        logger.info(
-            "User %s routed to manual review. %s", user.psit_roll_no, detail_str
-        )
-        _commit_pending(db, user, detail_str)
-        return False, "pending_review", (
-            "Your ID card was scanned but the details on the card don't exactly match "
-            "what you registered with. Your account has been added to the admin manual "
-            "review queue. Expected turnaround: under 24 hours."
-        ), qr_token
+    # ── Step 5: Auto-verify on Valid PSIT ID Card QR Code ──────────────
+    # A valid PSIT card-preview QR token proves physical possession of an authentic PSIT ID card.
+    user.verified = True
+    user.verification_method = VerificationMethod.QR_AUTO
+    user.verified_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(user)
+    logger.info("User %s auto-verified via valid PSIT ID card QR token (%s).", user.psit_roll_no, qr_token)
+    return True, "auto_verified", (
+        "Your PSIT ID card QR code was verified successfully! "
+        "You can now link your GitHub account and start claiming issues."
+    ), qr_token
 
 
 def _commit_pending(db: Session, user: User, reason: str) -> None:
@@ -367,6 +480,37 @@ def review_manual_verification(
         )
 
     if action.lower() == "approve":
+        clean_roll = student.psit_roll_no.strip().upper()
+        dup = (
+            db.query(User)
+            .filter(
+                User.psit_roll_no.ilike(clean_roll),
+                User.verified == True,
+                User.id != student.id,
+            )
+            .first()
+        )
+        if dup:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Cannot approve: roll number '{clean_roll}' is already verified under another account (user ID {dup.id}).",
+            )
+        if student.qr_token:
+            clean_tok = student.qr_token.strip().lower()
+            dup_qr = (
+                db.query(User)
+                .filter(
+                    User.qr_token.ilike(clean_tok),
+                    User.verified == True,
+                    User.id != student.id,
+                )
+                .first()
+            )
+            if dup_qr:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Cannot approve: ID card QR code is already verified under roll number '{dup_qr.psit_roll_no}' (user ID {dup_qr.id}).",
+                )
         student.verified = True
         student.verification_method = VerificationMethod.MANUAL
         student.verified_at = datetime.now(timezone.utc)

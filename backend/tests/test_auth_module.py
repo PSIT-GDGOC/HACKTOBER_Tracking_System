@@ -152,17 +152,33 @@ def test_student_signup_roll_number_length_validation(client_and_db):
 
 
 def test_student_signup_duplicate_guards(client_and_db):
-    """Duplicate roll numbers and duplicate emails must be rejected with 400."""
-    client, _ = client_and_db
+    """Duplicate roll numbers and duplicate emails of verified accounts must be rejected with 400.
+    Unverified accounts never block retrying signup."""
+    client, db = client_and_db
 
     # Register first student
-    client.post("/auth/signup", json={
+    res1 = client.post("/auth/signup", json={
         "name": "Original Student",
         "email": "original@psit.ac.in",
         "psit_roll_no": ROLL_DUP_1,
     })
+    assert res1.status_code == 201
 
-    # Duplicate roll number
+    # Before verification: an unverified pending account should NOT block retrying signup!
+    res_retry = client.post("/auth/signup", json={
+        "name": "Original Student Updated",
+        "email": "original@psit.ac.in",
+        "psit_roll_no": ROLL_DUP_1,
+    })
+    assert res_retry.status_code == 201
+    assert res_retry.json()["name"] == "Original Student Updated"
+
+    # Now mark the first student as verified in DB
+    user = db.query(User).filter(User.psit_roll_no == ROLL_DUP_1).first()
+    user.verified = True
+    db.commit()
+
+    # Once verified: duplicate roll number must be rejected with 400
     res_dup_roll = client.post("/auth/signup", json={
         "name": "Another Student",
         "email": "another@psit.ac.in",
@@ -171,7 +187,7 @@ def test_student_signup_duplicate_guards(client_and_db):
     assert res_dup_roll.status_code == 400
     assert "already registered" in res_dup_roll.json()["detail"]
 
-    # Duplicate email
+    # Once verified: duplicate email must be rejected with 400
     res_dup_email = client.post("/auth/signup", json={
         "name": "Different Student",
         "email": "original@psit.ac.in",
@@ -218,6 +234,67 @@ def test_auth_me_protected_endpoint(client_and_db):
     res = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert res.status_code == 200
     assert res.json()["psit_roll_no"] == ROLL_CODER
+
+
+def test_password_setup_and_login_enforcement(client_and_db):
+    """
+    Once a student sets a password, login strictly enforces the password.
+    Wrong or missing password yields 401; correct password returns JWT.
+    """
+    client, db = client_and_db
+
+    # Register student
+    reg_res = client.post("/auth/signup", json={
+        "name": "Secured Student",
+        "email": "secured@psit.ac.in",
+        "psit_roll_no": "2200330100099",
+    })
+    assert reg_res.status_code == 201
+
+    # Log in initially before password is set to get onboarding session
+    login_init = client.post("/auth/login", json={"identifier": "2200330100099"})
+    assert login_init.status_code == 200
+    token = login_init.json()["access_token"]
+
+    # 1. Attempt setting a weak password (too short)
+    weak_res = client.post(
+        "/auth/set-password",
+        json={"password": "short"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert weak_res.status_code in [400, 422]
+
+    # 2. Set a strong password
+    strong_pwd = "P@ssword2026!Strong"
+    set_res = client.post(
+        "/auth/set-password",
+        json={"password": strong_pwd},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert set_res.status_code == 200
+    assert set_res.json()["success"] is True
+
+    # 3. Logging in WITHOUT password must now be REJECTED with 401
+    no_pwd_res = client.post("/auth/login", json={"identifier": "2200330100099"})
+    assert no_pwd_res.status_code == 401
+    assert "Invalid roll number or password" in no_pwd_res.json()["detail"]
+
+    # 4. Logging in with WRONG password must be REJECTED with 401
+    wrong_pwd_res = client.post("/auth/login", json={
+        "identifier": "2200330100099",
+        "password": "WrongPassword123!",
+    })
+    assert wrong_pwd_res.status_code == 401
+    assert "Invalid roll number or password" in wrong_pwd_res.json()["detail"]
+
+    # 5. Logging in with CORRECT password must SUCCEED with 200
+    correct_pwd_res = client.post("/auth/login", json={
+        "identifier": "2200330100099",
+        "password": strong_pwd,
+    })
+    assert correct_pwd_res.status_code == 200
+    assert "access_token" in correct_pwd_res.json()
+    assert correct_pwd_res.json()["user"]["has_password"] is True
 
 
 # =====================================================================
@@ -320,6 +397,60 @@ def test_id_card_pending_review_on_portal_mismatch(client_and_db):
     updated = db.query(User).filter(User.id == 13).first()
     assert updated.verified is False
     assert updated.verification_method is None
+
+
+def test_id_card_duplicate_qr_code_rejected(client_and_db):
+    """
+    Prevent one PSIT ID card from verifying multiple student accounts.
+    If the same QR token is scanned for a second account, it must be rejected.
+    """
+    client, db = client_and_db
+
+    shared_token_hex = "abcdef1234567890abcdef1234567890"
+
+    # User 1: already verified with this ID card QR token
+    user1 = User(
+        id=70,
+        name="Original Student",
+        email="original@psit.ac.in",
+        psit_roll_no="2200320100070",
+        role=UserRole.STUDENT,
+        qr_token=shared_token_hex,
+        verified=True,
+    )
+    # User 2: tries to verify using the exact same ID card QR token
+    user2 = User(
+        id=71,
+        name="Second Account",
+        email="second@psit.ac.in",
+        psit_roll_no="2200320100071",
+        role=UserRole.STUDENT,
+        verified=False,
+    )
+    db.add(user1)
+    db.add(user2)
+    db.commit()
+
+    with patch("app.services.auth_service.decode_qr_from_image", return_value=shared_token_hex):
+        res = client.post(
+            "/auth/verify-id",
+            json={
+                "psit_roll_no": "2200320100071",
+                "id_card_image_base64": _create_dummy_image_b64(),
+            },
+            headers={"X-User-Id": "71"},
+        )
+
+    assert res.status_code == 200
+    data = res.json()
+    assert data["verified"] is False
+    assert data["status"] == "duplicate_verified_card"
+    assert "already been verified" in data["message"]
+
+    # Verify User 2 was NOT verified in the database
+    db.expire_all()
+    updated_user2 = db.query(User).filter(User.id == 71).first()
+    assert updated_user2.verified is False
 
 
 def test_id_card_qr_unreadable_fallback(client_and_db):
@@ -450,3 +581,54 @@ def test_github_oauth_linking(client_and_db):
     updated = db.query(User).filter(User.id == 30).first()
     assert updated.github_username == "sanjay-coder"
     assert updated.github_id == "987654"
+
+
+def test_github_link_validates_existence(client_and_db):
+    """Attempting to link a non-existent GitHub account returns 400."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+    client, db = client_and_db
+
+    student = User(
+        id=35,
+        name="Existence Tester",
+        email="exists@psit.ac.in",
+        psit_roll_no="2200330100099",
+        role=UserRole.STUDENT,
+        verified=True,
+    )
+    db.add(student)
+    db.commit()
+
+    # Case 1: GitHub returns 404 -> Rejected
+    mock_404_resp = MagicMock()
+    mock_404_resp.status_code = 404
+    mock_client_404 = AsyncMock()
+    mock_client_404.__aenter__.return_value.get.return_value = mock_404_resp
+
+    with patch("httpx.AsyncClient", return_value=mock_client_404):
+        res_404 = client.post(
+            "/auth/github/link",
+            json={"github_username": "fake-nonexistent-user-12345"},
+            headers={"X-User-Id": "35"},
+        )
+    assert res_404.status_code == 400
+    assert "was not found on GitHub" in res_404.json()["detail"]
+
+    # Case 2: GitHub returns 200 -> Accepted and github_id populated
+    mock_200_resp = MagicMock()
+    mock_200_resp.status_code = 200
+    mock_200_resp.json.return_value = {"login": "real-dev", "id": 54321}
+    mock_client_200 = AsyncMock()
+    mock_client_200.__aenter__.return_value.get.return_value = mock_200_resp
+
+    with patch("httpx.AsyncClient", return_value=mock_client_200):
+        res_200 = client.post(
+            "/auth/github/link",
+            json={"github_username": "real-dev"},
+            headers={"X-User-Id": "35"},
+        )
+    assert res_200.status_code == 200
+    assert res_200.json()["success"] is True
+    assert res_200.json()["github_username"] == "real-dev"
+    assert res_200.json()["github_id"] == "54321"
+

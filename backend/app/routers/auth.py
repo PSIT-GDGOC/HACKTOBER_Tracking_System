@@ -14,6 +14,7 @@ Endpoints:
 import base64
 from typing import List, Optional
 
+import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
@@ -28,6 +29,8 @@ from app.schemas.auth import (
     LoginRequest,
     ManualReviewActionRequest,
     ManualReviewItemResponse,
+    SetPasswordRequest,
+    SetPasswordResponse,
     SignupRequest,
     SignupResponse,
     TokenResponse,
@@ -44,6 +47,7 @@ from app.services.auth_service import (
     process_id_card_verification,
     register_student,
     review_manual_verification,
+    set_user_password,
 )
 
 router = APIRouter(prefix="/auth", tags=["Auth & Verification"])
@@ -88,9 +92,9 @@ def login(
     """
     Authenticate student, maintainer, or admin.
     Issues a cryptographically signed JWT scoped by user ID and role.
-    Unverified students can still log in but cannot claim issues.
+    If the account has a password set, password verification is strictly enforced.
     """
-    user = authenticate_user(db=db, identifier=payload.identifier)
+    user = authenticate_user(db=db, identifier=payload.identifier, password=payload.password)
 
     token_data = {
         "sub": str(user.id),
@@ -105,6 +109,23 @@ def login(
         token_type="bearer",
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         user=UserProfileResponse.model_validate(user),
+    )
+
+
+@router.post("/set-password", response_model=SetPasswordResponse, summary="Set account password after verification")
+def set_password(
+    payload: SetPasswordRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Set a strong password for the authenticated student account.
+    Requires an active authenticated session (JWT).
+    """
+    set_user_password(db=db, user=current_user, password=payload.password)
+    return SetPasswordResponse(
+        success=True,
+        message="Password set successfully. You can now use this password to log in."
     )
 
 
@@ -292,7 +313,7 @@ async def github_oauth_callback(
     response_model=GitHubOAuthLinkResponse,
     summary="Manually link a GitHub username (fallback / dev use)",
 )
-def link_github(
+async def link_github(
     payload: GitHubOAuthLinkRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
@@ -302,11 +323,58 @@ def link_github(
     Used during local development or if the OAuth flow is unavailable.
     Prefer /auth/github/callback for production.
     """
+    clean_username = payload.github_username.strip().lstrip("@")
+    if not clean_username:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="GitHub username cannot be empty.",
+        )
+
+    # Early DB duplicate check to avoid unnecessary GitHub API calls
+    existing = (
+        db.query(User)
+        .filter(User.github_username.ilike(clean_username), User.id != current_user.id)
+        .first()
+    )
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"GitHub username '{clean_username}' is already linked to another student account.",
+        )
+
+    github_id = payload.github_id
+
+    # Verify that the GitHub username actually exists on GitHub
+    if not github_id:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(6.0)) as client:
+            try:
+                gh_resp = await client.get(
+                    f"https://api.github.com/users/{clean_username}",
+                    headers={
+                        "Accept": "application/vnd.github+json",
+                        "User-Agent": "GDGOC-Hacktoberfest-Platform/1.0",
+                    },
+                )
+                if gh_resp.status_code == 404:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"GitHub account '@{clean_username}' was not found on GitHub. Please check the spelling.",
+                    )
+                if gh_resp.status_code == 200:
+                    gh_data = gh_resp.json()
+                    clean_username = gh_data.get("login", clean_username)
+                    github_id = str(gh_data.get("id", "")) or None
+            except HTTPException:
+                raise
+            except Exception:
+                # If GitHub is unreachable or rate limited, pass gracefully
+                pass
+
     updated_user = link_github_account(
         db=db,
         user=current_user,
-        github_username=payload.github_username,
-        github_id=payload.github_id,
+        github_username=clean_username,
+        github_id=github_id,
     )
     return GitHubOAuthLinkResponse(
         success=True,
@@ -314,3 +382,4 @@ def link_github(
         github_id=updated_user.github_id,
         message=f"Successfully linked GitHub account '{updated_user.github_username}'.",
     )
+

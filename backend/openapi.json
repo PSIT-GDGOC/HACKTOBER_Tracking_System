@@ -74,7 +74,7 @@
           "Auth & Verification"
         ],
         "summary": "Log in with roll number or email",
-        "description": "Authenticate student, maintainer, or admin.\nIssues a cryptographically signed JWT scoped by user ID and role.\nUnverified students can still log in but cannot claim issues.",
+        "description": "Authenticate student, maintainer, or admin.\nIssues a cryptographically signed JWT scoped by user ID and role.\nIf the account has a password set, password verification is strictly enforced.",
         "operationId": "login_auth_login_post",
         "requestBody": {
           "content": {
@@ -93,6 +93,86 @@
               "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/set-password": {
+      "post": {
+        "tags": [
+          "Auth & Verification"
+        ],
+        "summary": "Set account password after verification",
+        "description": "Set a strong password for the authenticated student account.\nRequires an active authenticated session (JWT).",
+        "operationId": "set_password_auth_set_password_post",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetPasswordRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetPasswordResponse"
                 }
               }
             }
@@ -4097,6 +4177,18 @@
             "type": "string",
             "title": "Identifier",
             "description": "PSIT roll number or email address"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Password",
+            "description": "Account password"
           }
         },
         "type": "object",
@@ -5022,6 +5114,38 @@
         ],
         "title": "SearchUserResult"
       },
+      "SetPasswordRequest": {
+        "properties": {
+          "password": {
+            "type": "string",
+            "maxLength": 128,
+            "minLength": 8,
+            "title": "Password",
+            "description": "New strong password (min 8 characters)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "password"
+        ],
+        "title": "SetPasswordRequest"
+      },
+      "SetPasswordResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "default": true
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "Password set successfully."
+          }
+        },
+        "type": "object",
+        "title": "SetPasswordResponse"
+      },
       "SignupRequest": {
         "properties": {
           "name": {
@@ -5379,6 +5503,11 @@
           },
           "role": {
             "$ref": "#/components/schemas/UserRole"
+          },
+          "has_password": {
+            "type": "boolean",
+            "title": "Has Password",
+            "default": false
           },
           "created_at": {
             "type": "string",

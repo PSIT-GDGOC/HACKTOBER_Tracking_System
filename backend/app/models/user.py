@@ -1,6 +1,6 @@
 import enum
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum, JSON
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum, JSON, Index, text
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import relationship
 from app.db import Base
@@ -19,11 +19,27 @@ class VerificationMethod(str, enum.Enum):
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = (
+        Index(
+            "ix_users_verified_psit_roll_no",
+            "psit_roll_no",
+            unique=True,
+            postgresql_where=text("verified = TRUE"),
+            sqlite_where=text("verified = 1"),
+        ),
+        Index(
+            "ix_users_verified_qr_token",
+            "qr_token",
+            unique=True,
+            postgresql_where=text("verified = TRUE AND qr_token IS NOT NULL"),
+            sqlite_where=text("verified = 1 AND qr_token IS NOT NULL"),
+        ),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False)
-    email = Column(String(255), unique=True, index=True, nullable=False)
-    psit_roll_no = Column(String(50), unique=True, index=True, nullable=False)
+    email = Column(String(255), index=True, nullable=False)
+    psit_roll_no = Column(String(50), index=True, nullable=False)
     
     # v2 ID Card & QR Verification fields
     id_card_image_url = Column(String(500), nullable=True)
@@ -38,6 +54,7 @@ class User(Base):
 
     github_username = Column(String(100), unique=True, index=True, nullable=True)
     github_id = Column(String(100), unique=True, nullable=True)
+    password_hash = Column(String(255), nullable=True)
     role = Column(
         Enum(UserRole, values_callable=lambda x: [e.value for e in x], name="userrole"),
         default=UserRole.STUDENT,
@@ -45,6 +62,10 @@ class User(Base):
     )
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    @property
+    def has_password(self) -> bool:
+        return bool(self.password_hash)
 
     @hybrid_property
     def erp_verified(self):
