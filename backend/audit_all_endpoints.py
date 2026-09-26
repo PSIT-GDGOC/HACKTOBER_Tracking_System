@@ -1,8 +1,18 @@
-"""Exhaustive Audit Script for ALL 41 API Endpoints in OpenAPI Specification.
+"""
+Manual Live-Server Audit Script — NOT a pytest unit test.
+==========================================================
+This script makes REAL HTTP requests to a RUNNING server at http://127.0.0.1:8000.
+It is intentionally named ``audit_*.py`` (not ``test_*.py``) so that pytest does NOT
+auto-collect it in CI.
 
-Hits every single registered endpoint against the live server at http://127.0.0.1:8000.
-All resource IDs are resolved dynamically so this script works against any database
-(SQLite with sequences starting at 1, Supabase with higher auto-increment values, etc.)
+Usage (run locally against a live server only):
+    # 1. Start the backend server first:
+    #    python -m uvicorn app.main:app --port 8000
+    # 2. Then run this script directly:
+    #    python audit_all_endpoints.py
+
+DO NOT run via pytest. It will fail with ConnectError if no server is running.
+All resource IDs are resolved dynamically — works with SQLite or Supabase.
 """
 import base64
 import hashlib

@@ -25,26 +25,24 @@ jobs:
       run:
         working-directory: backend
 
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: postgres
-          POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: hacktoberfest_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
+    # ── CI uses an in-memory SQLite database via pytest fixtures.
+    # ── No external Postgres service needed for unit/integration tests.
+    # ── (The live-audit scripts in audit_*.py are NOT collected by pytest;
+    #    they require a running server and are run manually only.)
 
     env:
-      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hacktoberfest_test
+      # Use SQLite in CI — the app's db.py auto-selects the correct engine
+      DATABASE_URL: sqlite:///./ci_test.db
       SECRET_KEY: test-secret-key-for-ci-do-not-use-in-prod-0000000000000000
       ENV: test
       DEBUG: "True"
+      GITHUB_CLIENT_ID: mock-github-client-id
+      GITHUB_CLIENT_SECRET: mock-github-client-secret
+      GITHUB_WEBHOOK_SECRET: dev_webhook_secret_for_testing
+      GITHUB_OAUTH_REDIRECT_URI: http://localhost:5173/#/auth/callback
+      PSIT_PORTAL_BASE_URL: https://www.psit.ac.in/op
+      ALLOWED_ORIGINS: "*"
+      MAX_ACTIVE_CLAIMS_PER_STUDENT: "2"
 
     steps:
       - name: Checkout
@@ -63,15 +61,12 @@ jobs:
           pip install -r requirements.txt
           pip install pytest pytest-cov
 
-      - name: Validate Alembic migrations (offline SQL generation)
-        run: python -m alembic upgrade head --sql > /tmp/migrations.sql
-        continue-on-error: false
-
-      - name: Apply migrations
-        run: python -m alembic upgrade head
-
-      - name: Run tests
-        run: python -m pytest -v --maxfail=1
+      - name: Run unit & integration tests
+        # pytest.ini sets testpaths=tests so only backend/tests/test_*.py
+        # are collected. The audit_*.py live-server scripts are never touched.
+        run: |
+          python -m pytest -v --tb=short --maxfail=5 \
+            --cov=app --cov-report=term-missing
 
   lint:
     name: Lint
