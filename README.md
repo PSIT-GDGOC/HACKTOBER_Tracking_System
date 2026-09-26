@@ -5,7 +5,7 @@
 # GDGOC Hacktoberfest
 ### Contribution Tracking System
 
-**A monorepo for GDGOC's Hacktoberfest event — student onboarding, atomic issue claiming, GitHub webhook sync, and a live leaderboard.**
+**A monorepo for GDGOC's Hacktoberfest event — student onboarding, ID card QR verification, password security, atomic issue claiming, GitHub webhook sync, and a live leaderboard.**
 
 [![Frontend](https://img.shields.io/badge/frontend-Vite%20%2B%20React%2019-646CFF?style=for-the-badge&logo=vite&logoColor=white)](./frontend)
 [![Backend](https://img.shields.io/badge/backend-FastAPI-009688?style=for-the-badge&logo=fastapi&logoColor=white)](./backend)
@@ -26,11 +26,16 @@
 
 **GDGOC Hacktoberfest — Contribution Tracking System** is a production-grade monorepo platform that sits on top of GitHub and manages the entire Hacktoberfest sprint lifecycle for PSIT Kanpur students:
 
-- 🎓 **Student onboarding** — registration → roll number identity check → ID card upload & QR verification → GitHub OAuth
-- 🔒 **Atomic issue claiming** — row-level PostgreSQL locks ensure no two students can claim the same issue simultaneously
-- 🔔 **Real-time sync** — GitHub webhooks push pull request and commit events into the platform automatically with HMAC-SHA256 signature verification
-- 🏆 **Live leaderboard** — weighted points calculation (`Hard: 80` · `Medium: 40` · `Easy: 20`) with dynamic standings
-- 🛠 **Role-based dashboards** — distinct interfaces tailored for students, maintainers (review queue), and administrators (moderation & approvals)
+- 🎓 **Student Onboarding & Verification Pipeline**:
+  - **Step 1 (Signup):** Deferred roll number uniqueness check (pending signups do not block retry or duplicate attempts; uniqueness is strictly finalized upon verified ID card matching).
+  - **Step 2 (ID Verification):** Server-side computer vision pipeline (`OpenCV` + `pyzbar`) that reads the PSIT ID card QR code across 5 contrast/resolution enhancement stages.
+  - **Single Card Enforcement:** Enforces physical 1-card-to-1-student uniqueness via partial unique indexing (`WHERE verified = TRUE AND qr_token IS NOT NULL`).
+  - **Step 3 (Password Security):** Post-verification strong password creation (min 8 chars, mixed letters & numbers/symbols) hashed with PBKDF2-HMAC-SHA256 and 16-byte random salt.
+  - **Step 4 (GitHub Identity):** Live GitHub API verification (`https://api.github.com/users/{username}`) that verifies handle existence before linking to prevent typos and spoofing.
+- 🔒 **Atomic Issue Claiming** — row-level PostgreSQL locks ensure no two students can claim the same issue simultaneously.
+- 🔔 **Real-Time Sync** — GitHub webhooks push pull request and commit events into the platform automatically with HMAC-SHA256 signature verification.
+- 🏆 **Live Leaderboard** — weighted points calculation (`Hard: 80` · `Medium: 40` · `Easy: 20`) with dynamic standings.
+- 🛠 **Role-Based Dashboards** — distinct interfaces tailored for students, maintainers (review queue), and administrators (moderation & approvals).
 
 > GitHub remains the source of truth for all source code. This platform is the event-management layer that orchestrates participation and gamification on top of it.
 
@@ -45,7 +50,7 @@ flowchart LR
     end
 
     subgraph API["⚙ Backend (FastAPI)"]
-        AUTH["/auth"]
+        AUTH["/auth (QR CV + Passwords)"]
         ISSUES["/issues"]
         HOOKS["/webhooks"]
         DASH["/dashboard"]
@@ -60,7 +65,7 @@ flowchart LR
         PG[("PostgreSQL (Supabase)")]
     end
 
-    GH["🐙 GitHub"]
+    GH["🐙 GitHub (API & Webhooks)"]
 
     UI -- "REST / JSON" --> API
     API -- "SQLAlchemy 2.0" --> PG
@@ -94,13 +99,15 @@ flowchart LR
       <ul>
         <li><b>Framework:</b> <a href="https://fastapi.tiangolo.com/">FastAPI 0.137</a></li>
         <li><b>ASGI Server:</b> <a href="https://www.uvicorn.org/">Uvicorn 0.49</a></li>
-        <li><b>Language:</b> Python 3.12+</li>
+        <li><b>Language:</b> Python 3.12+ / 3.14</li>
         <li><b>ORM:</b> <a href="https://www.sqlalchemy.org/">SQLAlchemy 2.0</a></li>
         <li><b>Validation:</b> <a href="https://docs.pydantic.dev/">Pydantic v2</a> &amp; <code>pydantic-settings</code></li>
         <li><b>Migrations:</b> <a href="https://alembic.sqlalchemy.org/">Alembic 1.20</a></li>
         <li><b>Database Driver:</b> <code>psycopg2-binary</code></li>
+        <li><b>Computer Vision / QR:</b> OpenCV (<code>opencv-python-headless</code>) + <code>pyzbar</code></li>
+        <li><b>Password Hashing:</b> PBKDF2-HMAC-SHA256 (100,000 iterations, 16-byte salt)</li>
         <li><b>Async Tasks:</b> <a href="https://docs.celeryq.dev/">Celery 5.6</a> (PostgreSQL broker transport)</li>
-        <li><b>Auth &amp; Security:</b> PyJWT (HS256) + GitHub OAuth</li>
+        <li><b>Auth &amp; Security:</b> PyJWT (HS256) + GitHub OAuth &amp; API validation</li>
         <li><b>Image Handling:</b> Pillow 12.3</li>
         <li><b>GitHub Integration:</b> PyGithub 2.2 &amp; HTTPX 0.28</li>
       </ul>
@@ -108,7 +115,7 @@ flowchart LR
   </tr>
 </table>
 
-> **Database & Deployment:** PostgreSQL (Supabase) · Uvicorn ASGI on Railway / Render · GitHub Actions CI
+> **Database & Deployment:** PostgreSQL (Supabase pooler on port 6543) · Uvicorn ASGI on Railway / Render · GitHub Actions CI
 
 ---
 
@@ -132,33 +139,28 @@ HACKTOBER_Tracking_System/
 │   ├── package-lock.json     # Dependency lockfile
 │   ├── vite.config.js        # Vite & Tailwind CSS v4 configuration
 │   └── README.md             # Frontend-specific documentation
-├── backend/                  # FastAPI 0.137 Python REST API server
+├── backend/                  # FastAPI Python REST API server
 │   ├── alembic/              # Alembic database migrations
-│   │   ├── versions/         # Schema migration revisions (0001, 0002)
+│   │   ├── versions/         # Schema migration revisions
 │   │   └── env.py            # Alembic runtime configuration
 │   ├── app/                  # Application modules
-│   │   ├── models/           # SQLAlchemy ORM models (11 domain tables)
-│   │   ├── routers/          # FastAPI route endpoints
+│   │   ├── models/           # SQLAlchemy ORM models (User, Issue, Claim, PR, Commit, etc.)
+│   │   ├── routers/          # FastAPI route endpoints (auth, issues, webhooks, dashboards, etc.)
 │   │   ├── schemas/          # Pydantic v2 request & response schemas
-│   │   ├── services/         # Core business logic & database service layer
+│   │   ├── services/         # QR decoding, PSIT portal service, Auth & GitHub linking services
 │   │   ├── tasks/            # Celery background tasks
 │   │   ├── celery_app.py     # Celery instance configuration
 │   │   ├── config.py         # Pydantic BaseSettings application config
-│   │   ├── db.py             # Database engine & sessionmaker
+│   │   ├── db.py             # Database engine & sessionmaker (Supabase PostgreSQL)
 │   │   ├── dependencies.py   # Auth, JWT, & database session dependencies
 │   │   ├── logging_config.py # PII-sanitized logging filters
 │   │   └── main.py           # FastAPI application entry point
-│   ├── tests/                # Pytest test suite (14 test modules)
+│   ├── tests/                # Pytest test suite (14 test modules, 109 test cases)
 │   ├── .env.example          # Backend environment configuration template
-│   ├── .gitignore            # Backend gitignore
-│   ├── alembic.ini           # Alembic migration configuration
-│   ├── built_v2.md           # Architecture build status
 │   ├── openapi.json          # Exported OpenAPI 3.1 specification
-│   ├── Procfile              # Process definition for deployment
-│   ├── README.md             # Backend architecture documentation
 │   ├── requirements.txt      # Python dependencies
 │   ├── seed.py               # Database seeder script
-│   └── tasks_v2.md           # Backend task tracking
+│   └── README.md             # Backend architecture documentation
 ├── .gitignore                # Root monorepo exclusion rules
 └── README.md                 # Unified project documentation
 ```
@@ -305,12 +307,16 @@ MAX_ACTIVE_CLAIMS_PER_STUDENT=2
 
 | Method | Endpoint | Auth | Description |
 |---|---|:---:|---|
-| `POST` | `/auth/signup` | — | Register with roll number + name + email |
-| `POST` | `/auth/login` | — | Authenticate with credentials, returns JWT |
+| `POST` | `/auth/signup` | — | Register with roll number + name + email (deferred uniqueness check) |
+| `POST` | `/auth/login` | — | Authenticate with roll number / email + password, returns JWT |
+| `POST` | `/auth/set-password` | ✅ | Set strong account password (min 8 chars, alphanumeric) |
 | `GET` | `/auth/me` | ✅ | Fetch current authenticated user session |
-| `POST` | `/auth/verify-id` | ✅ | Upload ID card for automated QR code verification |
+| `POST` | `/auth/verify-id` | ✅ | Upload ID card for OpenCV QR decode + 1-card uniqueness check |
+| `GET` | `/auth/pending-verifications` | ✅ (Admin) | Queue for fallback manual reviews |
+| `POST` | `/auth/verify-manual/{id}` | ✅ (Admin) | Manual approve / reject decision |
 | `GET` | `/auth/github/login` | — | Retrieve GitHub OAuth redirect URL |
-| `POST` | `/auth/github/link` | ✅ | Link GitHub account to student profile |
+| `POST` | `/auth/github/callback` | ✅ | GitHub OAuth callback: exchange code & link identity |
+| `POST` | `/auth/github/link` | ✅ | Manually link GitHub username (validated against GitHub API) |
 
 ### Issues & Claims (`/issues`)
 
@@ -395,7 +401,7 @@ MAX_ACTIVE_CLAIMS_PER_STUDENT=2
     </td>
     <td align="center" width="33%">
       <b>Aditya</b><br/>
-      <sub>Auth, QR verification, infra, deployment</sub>
+      <sub>Auth, QR CV verification, password security, infra</sub>
     </td>
   </tr>
 </table>
