@@ -44,35 +44,71 @@
 ## 🏗 Architecture
 
 ```mermaid
-flowchart LR
-    subgraph Client["🖥 Browser"]
-        UI["Frontend<br/>(Vite 7 + React 19)"]
+flowchart TB
+    subgraph Client["🌐 Client"]
+        Browser["Browser<br/>React 19 + Vite 7 SPA"]
     end
 
-    subgraph API["⚙ Backend (FastAPI)"]
-        AUTH["/auth (QR CV + Passwords)"]
-        ISSUES["/issues"]
-        HOOKS["/webhooks"]
-        DASH["/dashboard"]
-        CONTR["/contributions"]
+    subgraph Frontend["Frontend (SPA)"]
+        Auth4["/auth<br/>4-Step Wizard"]
+        Login["/login"]
+        Dashboard["/dashboard<br/>role-switched"]
+        Issues["/issues<br/>filterable explorer"]
+        Leaderboard["/leaderboard"]
+        Repos["/repos"]
     end
 
-    subgraph Workers["⚡ Background Workers"]
-        CELERY["Celery Worker<br/>(sqla broker)"]
+    subgraph Backend["Backend — FastAPI (Uvicorn ASGI)"]
+        AuthSvc["auth_service.py<br/>PBKDF2-HMAC-SHA256 · JWT (HS256)"]
+        QRSvc["qr_service.py<br/>5-stage OpenCV/pyzbar CV pipeline"]
+        IssueSvc["issue_service.py<br/>SELECT ... FOR UPDATE row locks"]
+        WebhookSvc["webhook_service.py<br/>HMAC-SHA256 verify"]
     end
 
-    subgraph Data["🗄 Storage"]
-        PG[("PostgreSQL (Supabase)")]
+    subgraph External["External Services"]
+        GitHubAPI["GitHub API<br/>api.github.com — handle validation"]
+        GitHubWebhook["GitHub Webhooks<br/>PR/commit events"]
     end
 
-    GH["🐙 GitHub (API & Webhooks)"]
+    subgraph Async["Background Processing"]
+        Worker["Celery Worker<br/>PostgreSQL as broker"]
+    end
 
-    UI -- "REST / JSON" --> API
-    API -- "SQLAlchemy 2.0" --> PG
-    GH -- "Webhooks (HMAC-SHA256)" --> HOOKS
-    HOOKS -. "Async Jobs" .-> CELERY
-    CELERY --> PG
-    API -- "PyGithub / HTTPX" --> GH
+    subgraph Data["Database — Supabase PostgreSQL"]
+        PG[("PostgreSQL<br/>port 6543 · transaction pooler<br/>via psycopg2")]
+    end
+
+    Browser -- "REST / JSON" --> Auth4
+    Browser --> Login
+    Browser --> Dashboard
+    Browser --> Issues
+    Browser --> Leaderboard
+    Browser --> Repos
+
+    Auth4 -- "JWT bearer" --> AuthSvc
+    Auth4 -- "ID card upload" --> QRSvc
+    AuthSvc -- "validate handle" --> GitHubAPI
+    Issues -- "claim issue" --> IssueSvc
+
+    GitHubWebhook -- "POST /webhooks/github" --> WebhookSvc
+    WebhookSvc -- "enqueue link job" --> Worker
+    Worker -- "link PR → claim<br/>award points" --> PG
+
+    AuthSvc --> PG
+    QRSvc --> PG
+    IssueSvc -- "SQLAlchemy 2.0" --> PG
+    WebhookSvc --> PG
+    Leaderboard -- "poll (useData hook)" --> PG
+
+    classDef frontend fill:#1a1a2e,stroke:#4ecdc4,color:#fff
+    classDef backend fill:#16213e,stroke:#e94560,color:#fff
+    classDef external fill:#2d2d2d,stroke:#f9c74f,color:#fff
+    classDef data fill:#0f3460,stroke:#48cae4,color:#fff
+
+    class Auth4,Login,Dashboard,Issues,Leaderboard,Repos frontend
+    class AuthSvc,QRSvc,IssueSvc,WebhookSvc,Worker backend
+    class GitHubAPI,GitHubWebhook external
+    class PG data
 ```
 
 ---
