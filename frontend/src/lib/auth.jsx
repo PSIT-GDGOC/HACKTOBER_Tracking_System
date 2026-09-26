@@ -99,6 +99,9 @@ export function RequireRole({ roles, children }) {
   const location = useLocation();
   if (loading) return <AuthBootLoader />;
   if (!isAuthenticated) return <Navigate to="/login" state={{ from: location.pathname }} replace />;
+  if (user && user.role === "student" && !user.verified) {
+    return <Navigate to="/join" state={{ from: location.pathname }} replace />;
+  }
   if (roles && user && !roles.includes(user.role)) return <Navigate to="/dashboard/403" replace />;
   return <>{children}</>;
 }

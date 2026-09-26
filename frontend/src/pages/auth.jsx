@@ -120,16 +120,17 @@ export function AuthWizard() {
     if (roll.length !== 13) return setError("PSIT roll number must be exactly 13 characters (e.g. 2200320100001).");
     if (!form.agree) return setError("You need to accept the code of conduct to continue.");
     setError(null);
-    const res = await signup.mutate({
-      name: form.name.trim(),
-      email: form.email.trim(),
-      psit_roll_no: roll,
-    });
-    if (res) {
+    try {
+      const res = await api.signup({
+        name: form.name.trim(),
+        email: form.email.trim(),
+        psit_roll_no: roll,
+      });
       setSignedUpUser(res);
       setStep(2);
-    } else if (signup.error) {
-      setError(signup.error);
+    } catch (err) {
+      const msg = err?.detail || err?.message || "Failed to create account. Please check your details.";
+      setError(msg);
     }
   };
 
@@ -139,7 +140,7 @@ export function AuthWizard() {
       setError("Only JPEG or PNG photos of your ID card are accepted.");
       return;
     }
-    if (f.size > 4.5 * 1024 * 1024) {
+    if (f.size > 5 * 1024 * 1024) {
       setError("Image is over the 5MB limit — crop or compress it and try again.");
       return;
     }
@@ -154,23 +155,28 @@ export function AuthWizard() {
     setQrStatus("reading");
     setUploadPct(15);
 
-    // Client-side compress before upload (keeps us under the 5MB server cap).
-    const dataUrl = await compressImage(file, 1400, 0.82);
-    setUploadPct(45);
-    setQrStatus("uploading");
+    try {
+      // Preserve sharp image clarity for QR matrix decoding
+      const dataUrl = await compressImage(file, 2000, 0.90);
+      setUploadPct(45);
+      setQrStatus("uploading");
 
-    const res = await verifyId.mutate({
-      psit_roll_no: signedUpUser?.psit_roll_no ?? form.psit_roll_no.trim(),
-      id_card_image_base64: dataUrl,
-    });
-    setUploadPct(100);
-    setQrStatus("idle");
+      const res = await api.verifyId({
+        psit_roll_no: signedUpUser?.psit_roll_no ?? form.psit_roll_no.trim(),
+        id_card_image_base64: dataUrl,
+      });
+      setUploadPct(100);
+      setQrStatus("idle");
 
-    if (res) {
-      setVerifyResult(res);
-      setStep(3);
-    } else if (verifyId.error) {
-      setError(verifyId.error);
+      if (res) {
+        setVerifyResult(res);
+        setStep(3);
+      }
+    } catch (err) {
+      setUploadPct(0);
+      setQrStatus("idle");
+      const msg = err?.detail || err?.message || "Failed to verify ID card. Please try again.";
+      setError(msg);
     }
   };
 
@@ -381,13 +387,9 @@ export function AuthWizard() {
             <Button variant="green" size="lg" onClick={startVerification} loading={qrStatus !== "idle"} disabled={!file}>
               Scan &amp; verify →
             </Button>
-            <Button variant="paper" size="lg" onClick={() => setStep(3)}>
-              Skip for now
-            </Button>
           </div>
           <p className="mt-3 font-mono text-[10px] leading-relaxed text-ink-soft">
-            Blur, glare or a cropped QR code are the common failure cases — if the scan can't read your
-            card, you'll be asked to re-upload.
+            Make sure the entire QR code and text are clearly visible, in focus, and without glare.
           </p>
         </>
       )}
@@ -399,85 +401,115 @@ export function AuthWizard() {
             Step 3 of 3
           </Sticker>
           <h1 className="mt-4 font-display text-3xl font-extrabold uppercase leading-none tracking-tight">
-            {verifyResult ? (verifyResult.verified ? "You're verified ✓" : "Pending review") : "Verification skipped"}
+            {verifyResult?.verified ? "You're verified ✓" : "Verification Required"}
           </h1>
 
-          {verifyResult ? (
-            <div
-              className={cn(
-                "mt-5 border-[3px] border-ink p-4 shadow-[5px_5px_0_0_#101010]",
-                verifyResult.verified ? "bg-ggreen-light" : "bg-gyellow-light",
-              )}
-            >
-              <p className="font-display text-sm font-extrabold uppercase">{verifyResult.status}</p>
+          {verifyResult?.verified ? (
+            <div className="mt-5 border-[3px] border-ink bg-ggreen-light p-4 shadow-[5px_5px_0_0_#101010]">
+              <p className="font-display text-sm font-extrabold uppercase text-ggreen">{verifyResult.status || "AUTO_VERIFIED"}</p>
               <p className="mt-1 text-sm leading-relaxed text-ink-soft">{verifyResult.message}</p>
             </div>
           ) : (
-            <div className="mt-5 border-[3px] border-dashed border-ink bg-paper-2/50 p-4">
-              <p className="text-sm leading-relaxed text-ink-soft">
-                You can upload your ID card any time — claiming issues unlocks once your account is
-                verified (automatically via QR, or by an admin).
+            <div className="mt-5 border-[3px] border-ink bg-gyellow-light p-5 shadow-[5px_5px_0_0_#101010]">
+              <p className="font-display text-sm font-extrabold uppercase text-ink">
+                {verifyResult?.status === "qr_unreadable" ? "QR Code Unreadable" : "Pending Admin Verification"}
               </p>
+              <p className="mt-2 text-sm leading-relaxed text-ink">
+                {verifyResult?.message || "Your ID card could not be verified automatically. Access to the dashboard is locked until your student identity is verified."}
+              </p>
+              <div className="mt-4 flex flex-wrap gap-3">
+                <Button
+                  variant="blue"
+                  size="md"
+                  onClick={() => {
+                    setFile(null);
+                    setPreview(null);
+                    setError(null);
+                    setStep(2);
+                  }}
+                >
+                  ↺ Try Re-uploading Clearer Photo
+                </Button>
+                <Link
+                  to="/login"
+                  className="inline-flex items-center border-[3px] border-ink bg-white px-4 py-2 font-display text-sm font-bold uppercase shadow-[3px_3px_0_0_#101010] hover:-translate-y-0.5"
+                >
+                  Log in later
+                </Link>
+              </div>
             </div>
           )}
 
-          <h2 className="mt-8 font-display text-xl font-extrabold uppercase tracking-tight">Connect your GitHub</h2>
-          <p className="mt-1 text-sm text-ink-soft">
-            Required before you can claim issues — PRs and commits are matched to your claims by
-            GitHub username.
-          </p>
+          {verifyResult?.verified && (
+            <>
+              <h2 className="mt-8 font-display text-xl font-extrabold uppercase tracking-tight">Connect your GitHub</h2>
+              <p className="mt-1 text-sm text-ink-soft">
+                Required before you can claim issues — PRs and commits are matched to your claims by
+                GitHub username.
+              </p>
 
-          {linked ? (
-            <Panel className="mt-4 border-ggreen p-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <p className="font-display text-lg font-extrabold">@{githubUsername.replace(/^@/, "")}</p>
-                <Badge tone="green" dot>Linked</Badge>
-              </div>
-            </Panel>
-          ) : (
-            <form onSubmit={doLinkGithub} className="mt-4 space-y-3">
-              <Field label="GitHub username" hint="or use the OAuth redirect">
-                <Input
-                  value={githubUsername}
-                  onChange={(e) => setGithubUsername(e.target.value)}
-                  placeholder="octocat"
-                  className="font-mono"
-                />
-              </Field>
-              {error && <p className="font-mono text-xs font-bold text-gred">▲ {error}</p>}
-              <div className="flex flex-wrap gap-3">
-                <Button type="submit" variant="ink" loading={linkGithub.pending}>Link account</Button>
-                <Button
-                  type="button"
-                  variant="paper"
-                  onClick={async () => {
-                    try {
-                      const { oauth_url } = await api.githubLoginUrl();
-                      window.open(oauth_url, "_blank", "noopener");
-                    } catch {
-                      setError("Could not start the GitHub OAuth flow — link your username manually instead.");
-                    }
-                  }}
-                >
-                  Use GitHub OAuth ↗
+              {linked ? (
+                <Panel className="mt-4 border-ggreen p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <p className="font-display text-lg font-extrabold">@{githubUsername.replace(/^@/, "")}</p>
+                    <Badge tone="green" dot>Linked</Badge>
+                  </div>
+                </Panel>
+              ) : (
+                <form onSubmit={doLinkGithub} className="mt-4 space-y-3">
+                  <Field label="GitHub username" hint="or use the OAuth redirect">
+                    <Input
+                      value={githubUsername}
+                      onChange={(e) => setGithubUsername(e.target.value)}
+                      placeholder="octocat"
+                      className="font-mono"
+                    />
+                  </Field>
+                  {error && <p className="font-mono text-xs font-bold text-gred">▲ {error}</p>}
+                  <div className="flex flex-wrap gap-3">
+                    <Button type="submit" variant="ink" loading={linkGithub.pending}>Link account</Button>
+                    <Button
+                      type="button"
+                      variant="paper"
+                      onClick={async () => {
+                        try {
+                          const { oauth_url } = await api.githubLoginUrl();
+                          window.open(oauth_url, "_blank", "noopener");
+                        } catch {
+                          setError("Could not start the GitHub OAuth flow — link your username manually instead.");
+                        }
+                      }}
+                    >
+                      Use GitHub OAuth ↗
+                    </Button>
+                  </div>
+                </form>
+              )}
+
+              <div className="mt-8 border-t-2 border-dashed border-paper-3 pt-5">
+                <Button variant="green" size="lg" className="w-full" onClick={enterDashboard}>
+                  Enter the dashboard →
                 </Button>
               </div>
-            </form>
+            </>
           )}
-
-          <div className="mt-8 border-t-2 border-dashed border-paper-3 pt-5">
-            <Button variant="green" size="lg" className="w-full" onClick={enterDashboard}>
-              Enter the dashboard →
-            </Button>
-          </div>
         </>
       )}
     </WizardShell>
   );
 }
 
-/** Downscale + re-encode an image file to a JPEG data URL (client-side compress). */
-function compressImage(file, maxSide = 1400, quality = 0.82) {
+/** Downscale + re-encode an image file to a JPEG data URL. Preserves full resolution if under 4.5MB. */
+function compressImage(file, maxSide = 2200, quality = 0.90) {
+  // If file is already <= 4.5MB, don't downscale so the QR finder patterns remain crisp and readable!
+  if (file.size <= 4.5 * 1024 * 1024) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onerror = () => reject(new Error("Could not read the file"));
+      reader.onload = () => resolve(reader.result);
+      reader.readAsDataURL(file);
+    });
+  }
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error("Could not read the file"));
@@ -505,10 +537,10 @@ function compressImage(file, maxSide = 1400, quality = 0.82) {
 
 export function Login() {
   const nav = useNavigate();
-  const { login } = useAuth();
+  const { login, logout } = useAuth();
   const [identifier, setIdentifier] = useState("");
   const [error, setError] = useState(null);
-  const { mutate, pending } = useMutation(login);
+  const [pending, setPending] = useState(false);
 
   /** Where RequireRole bounced us from, so we can send the user back there. */
   const from = useLocation().state?.from;
@@ -518,9 +550,21 @@ export function Login() {
     const id = identifier.trim();
     if (!id) return setError("Enter your roll number or email.");
     setError(null);
-    const user = await mutate(id);
-    if (user) nav(from && from.startsWith("/dashboard") ? from : "/dashboard");
-    else setError("No account found for that roll number or email.");
+    setPending(true);
+    try {
+      const user = await login(id);
+      if (user && user.role === "student" && !user.verified) {
+        logout();
+        setError("Your account is not verified. You must complete ID card verification before logging into the system.");
+        return;
+      }
+      nav(from && from.startsWith("/dashboard") ? from : "/dashboard");
+    } catch (err) {
+      const msg = err?.detail || err?.message || "No account found for that roll number or email.";
+      setError(msg);
+    } finally {
+      setPending(false);
+    }
   };
 
   return (

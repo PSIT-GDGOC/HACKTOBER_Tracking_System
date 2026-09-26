@@ -257,6 +257,20 @@ async def process_id_card_verification(
     # Store the decoded QR token (private — stripped from public API responses)
     user.qr_token = qr_token
 
+    # ── Step 3b: Direct roll number match in QR ───────────────────────
+    clean_user_roll = user.psit_roll_no.strip().upper()
+    if clean_user_roll in qr_token.strip().upper():
+        user.verified = True
+        user.verification_method = VerificationMethod.QR_AUTO
+        user.verified_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(user)
+        logger.info("User %s auto-verified via student roll number in QR code (%s).", user.psit_roll_no, qr_token)
+        return True, "auto_verified", (
+            "Your PSIT ID card was verified successfully. "
+            "You can now link your GitHub account and start claiming issues."
+        ), qr_token
+
     # ── Step 4: Fetch student data from PSIT portal ───────────────────
     portal_data: Optional[Dict[str, Any]] = None
     try:
