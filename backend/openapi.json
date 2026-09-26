@@ -706,6 +706,32 @@
         }
       }
     },
+    "/issues/repositories": {
+      "get": {
+        "tags": [
+          "Issues"
+        ],
+        "summary": "List registered repositories",
+        "description": "Return all registered official repositories.",
+        "operationId": "list_repositories_issues_repositories_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RepositoryBrief"
+                  },
+                  "type": "array",
+                  "title": "Response List Repositories Issues Repositories Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/issues/sync": {
       "post": {
         "tags": [
@@ -764,7 +790,7 @@
           "Issues"
         ],
         "summary": "List issues with filters",
-        "description": "Explore issues with multi-attribute filtering (repo, difficulty, category, tech tag, status, keyword search).",
+        "description": "Explore issues with multi-attribute filtering (repo, platform, difficulty, category, tech tag, status, keyword search).",
         "operationId": "list_issues_issues_get",
         "parameters": [
           {
@@ -784,6 +810,24 @@
               "title": "Repo Id"
             },
             "description": "Filter by repository ID"
+          },
+          {
+            "name": "platform",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by platform: web or android/phone",
+              "title": "Platform"
+            },
+            "description": "Filter by platform: web or android/phone"
           },
           {
             "name": "difficulty",

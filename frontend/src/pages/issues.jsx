@@ -23,6 +23,7 @@ export default function IssueExplorer() {
   const drawers = useDrawers();
   const [filters, setFilters] = useState({
     repo_id: params.get("repo_id") ?? "",
+    platform: params.get("platform") ?? "",
     difficulty: params.get("difficulty") ?? "",
     category: params.get("category") ?? "",
     tech_tag: params.get("tech_tag") ?? "",
@@ -37,6 +38,7 @@ export default function IssueExplorer() {
     setFilters((f) => ({
       ...f,
       repo_id: params.get("repo_id") ?? f.repo_id,
+      platform: params.get("platform") ?? f.platform,
       difficulty: params.get("difficulty") ?? f.difficulty,
       category: params.get("category") ?? f.category,
       status: params.get("status") ?? f.status,
@@ -57,14 +59,10 @@ export default function IssueExplorer() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params]);
 
-  /** Repository options come from issue rows (no dedicated repos endpoint). */
+  /** Repository options loaded directly via official repositories list. */
   useEffect(() => {
-    api.issues({ limit: 100 }).then((data) => {
-      const seen = new Map();
-      (data?.items || []).forEach((i) => {
-        if (i.repository && !seen.has(i.repository.id)) seen.set(i.repository.id, i.repository);
-      });
-      setRepos(Array.from(seen.values()));
+    api.repositories().then((list) => {
+      if (Array.isArray(list) && list.length > 0) setRepos(list);
     }).catch(() => {});
   }, []);
 
@@ -72,6 +70,7 @@ export default function IssueExplorer() {
     () =>
       api.issues({
         repo_id: filters.repo_id || undefined,
+        platform: filters.platform || undefined,
         difficulty: filters.difficulty || undefined,
         category: filters.category || undefined,
         tech_tag: filters.tech_tag || undefined,
@@ -100,12 +99,30 @@ export default function IssueExplorer() {
 
   const groups = [
     {
-      label: "Repository",
-      value: filters.repo_id || "all",
-      onChange: (v) => set("repo_id", v === "all" ? "" : v),
+      label: "Repository / Platform",
+      value: filters.platform || filters.repo_id || "all",
+      onChange: (v) => {
+        if (v === "all") {
+          setFilters((f) => ({ ...f, platform: "", repo_id: "", skip: 0 }));
+          setParam("platform", "");
+          setParam("repo_id", "");
+        } else if (v === "web" || v === "android") {
+          setFilters((f) => ({ ...f, platform: v, repo_id: "", skip: 0 }));
+          setParam("platform", v);
+          setParam("repo_id", "");
+        } else {
+          setFilters((f) => ({ ...f, repo_id: v, platform: "", skip: 0 }));
+          setParam("repo_id", v);
+          setParam("platform", "");
+        }
+      },
       options: [
-        ...REPO_OPTIONS_PLACEHOLDER,
-        ...repos.map((r) => ({ value: String(r.id), label: r.name })),
+        { value: "all", label: "Any repo" },
+        { value: "web", label: "🌐 Web App" },
+        { value: "android", label: "📱 Phone App (Android)" },
+        ...repos
+          .filter((r) => r.platform !== "web" && r.platform !== "android")
+          .map((r) => ({ value: String(r.id), label: r.name })),
       ],
     },
     {

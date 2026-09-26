@@ -1,11 +1,11 @@
-from typing import Optional
+from typing import List, Optional
 from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.dependencies import get_current_user
-from app.models import User, IssueDifficulty, IssueStatus
-from app.schemas.issue import IssueResponse, IssueListResponse, IssueSyncResponse
+from app.models import User, IssueDifficulty, IssueStatus, Repository
+from app.schemas.issue import IssueResponse, IssueListResponse, IssueSyncResponse, RepositoryBrief
 from app.schemas.claim import ClaimResponse, ClaimReleaseResponse
 from app.services.issue_service import (
     sync_issues_from_github,
@@ -16,6 +16,12 @@ from app.services.issue_service import (
 )
 
 router = APIRouter(prefix="/issues", tags=["Issues"])
+
+
+@router.get("/repositories", response_model=List[RepositoryBrief], summary="List registered repositories")
+def list_repositories(db: Session = Depends(get_db)):
+    """Return all registered official repositories."""
+    return db.query(Repository).all()
 
 
 @router.post("/sync", response_model=IssueSyncResponse, summary="Sync issues from GitHub")
@@ -34,6 +40,7 @@ def sync_issues(
 @router.get("", response_model=IssueListResponse, summary="List issues with filters")
 def list_issues(
     repo_id: Optional[int] = Query(None, description="Filter by repository ID"),
+    platform: Optional[str] = Query(None, description="Filter by platform: web or android/phone"),
     difficulty: Optional[IssueDifficulty] = Query(None, description="Filter by difficulty (easy, medium, hard)"),
     tech_tag: Optional[str] = Query(None, description="Filter by technology tag (e.g. React, Kotlin)"),
     category: Optional[str] = Query(None, description="Filter by category (frontend, backend, ui/ux, etc.)"),
@@ -44,11 +51,12 @@ def list_issues(
     db: Session = Depends(get_db),
 ):
     """
-    Explore issues with multi-attribute filtering (repo, difficulty, category, tech tag, status, keyword search).
+    Explore issues with multi-attribute filtering (repo, platform, difficulty, category, tech tag, status, keyword search).
     """
     items, total = get_issues(
         db=db,
         repo_id=repo_id,
+        platform=platform,
         difficulty=difficulty,
         tech_tag=tech_tag,
         category=category,

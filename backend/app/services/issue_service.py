@@ -202,6 +202,7 @@ def _enrich_issue_response(issue: Issue, active_claim: Optional[Claim] = None) -
 def get_issues(
     db: Session,
     repo_id: Optional[int] = None,
+    platform: Optional[str] = None,
     difficulty: Optional[IssueDifficulty] = None,
     tech_tag: Optional[str] = None,
     category: Optional[str] = None,
@@ -215,6 +216,11 @@ def get_issues(
 
     if repo_id is not None:
         query = query.filter(Issue.repo_id == repo_id)
+    if platform:
+        clean_platform = platform.lower().strip()
+        if clean_platform in ("web", "phone", "android"):
+            target_platform = "android" if clean_platform in ("android", "phone") else "web"
+            query = query.join(Issue.repository).filter(cast(Repository.platform, String).ilike(f"%{target_platform}%"))
     if difficulty is not None:
         query = query.filter(Issue.difficulty == difficulty)
     if category is not None:

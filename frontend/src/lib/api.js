@@ -138,6 +138,7 @@ export const api = {
   linkGithub: (body) => request("/auth/github/link", { method: "POST", body }), // { github_username, github_id? }
 
   /* ---- issues (Abu's module) ---- */
+  repositories: () => request("/issues/repositories"),
   issues: (params = {}) =>
     request(`/issues${qs({ skip: 0, limit: 50, ...params })}`),
   issue: (id) => request(`/issues/${id}`),
@@ -195,17 +196,18 @@ export const githubPrUrl = (repoBrief, pr) =>
     : null;
 
 /**
- * The backend has no dedicated "list repositories" endpoint; repositories are
- * discovered from the `repository` brief embedded in issue / PR / commit rows.
+ * Returns registered repositories for event filtering.
  * Returns [{ id, name, platform, github_repo_url }].
  */
 export async function discoverRepositories() {
-  const data = await api.issues({ limit: 100 });
-  const seen = new Map();
-  (data?.items || []).forEach((i) => {
-    if (i.repository && !seen.has(i.repository.id)) seen.set(i.repository.id, i.repository);
-  });
-  return Array.from(seen.values());
+  try {
+    const list = await api.repositories();
+    if (Array.isArray(list) && list.length > 0) return list;
+  } catch {}
+  return [
+    { id: 1, name: "hacktoberfest-web", platform: "web" },
+    { id: 2, name: "hacktoberfest-android", platform: "android" },
+  ];
 }
 
 /** Points awarded per difficulty — same weights the leaderboard query uses. */
