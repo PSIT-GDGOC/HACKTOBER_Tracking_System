@@ -19,8 +19,13 @@ class Settings(BaseSettings):
     GITHUB_WEBHOOK_SECRET: str = ""
     GITHUB_WEB_REPO_URL: str = ""
     GITHUB_ANDROID_REPO_URL: str = ""
+    # GitHub OAuth (student GitHub account linking)
+    GITHUB_CLIENT_ID: str = ""
+    GITHUB_CLIENT_SECRET: str = ""
+    GITHUB_OAUTH_REDIRECT_URI: str = "http://localhost:5173/#/auth/callback"
 
-    # PSIT ERP Integration
+    # PSIT Portal Integration
+    PSIT_PORTAL_BASE_URL: str = "https://www.psit.ac.in/op"
     ERP_API_URL: str = ""
     ERP_API_KEY: str = ""
 

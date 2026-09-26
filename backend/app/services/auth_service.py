@@ -3,11 +3,20 @@
 Implements:
 - JWT token generation & verification (PyJWT)
 - Student registration & credential lookup
-- ID Card image validation & server-side verification logic
-- PSIT Portal exact roll + fuzzy name cross-check
+- Server-side QR decode from ID card image (OpenCV + pyzbar via qr_service)
+- PSIT portal student data fetch (via psit_portal_service)
+- Exact roll number + fuzzy name cross-check
 - Auto-verification vs. pending manual-review fallback
 - Admin manual verification approval / rejection queue
-- GitHub identity linking with duplicate guard
+- GitHub OAuth code exchange + identity linking
+
+Verification flow (end-to-end):
+    1. Client sends base64 ID card photo to POST /auth/verify-id
+    2. Backend decodes the QR using OpenCV + pyzbar (server-side only)
+    3. Validates QR URL: https://www.psit.ac.in/op/card-preview/<32-hex-token>
+    4. Fetches student data from PSIT portal API using the 32-char token
+    5. Cross-checks roll_no (exact) + name (fuzzy) vs registered values
+    6. Auto-verifies on match; routes to admin manual queue on any failure
 """
 import base64
 import difflib
@@ -17,6 +26,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple, Dict, Any, List
 
+import httpx
 import jwt
 from fastapi import HTTPException, status
 from PIL import Image
@@ -24,6 +34,8 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.models import User, UserRole, VerificationMethod
+from app.services.qr_service import decode_qr_from_image, validate_psit_qr_token
+from app.services.psit_portal_service import fetch_psit_student_data
 
 logger = logging.getLogger(__name__)
 
@@ -67,8 +79,12 @@ def decode_access_token(token: str) -> dict:
 # =====================================================================
 
 def register_student(db: Session, name: str, email: str, psit_roll_no: str) -> User:
-    """Register a new student in unverified state."""
-    clean_roll = psit_roll_no.strip()
+    """Register a new student in unverified state.
+
+    Roll number validation (exactly 13 alphanumeric chars) is enforced by the
+    Pydantic schema (SignupRequest.validate_roll_number) before this is called.
+    """
+    clean_roll = psit_roll_no.strip().upper()
     clean_email = email.strip().lower()
     clean_name = name.strip()
 
@@ -122,7 +138,7 @@ def authenticate_user(db: Session, identifier: str) -> User:
 
 
 # =====================================================================
-# ID Card & QR Verification Engine
+# ID Card & QR Verification Engine  (fully server-side)
 # =====================================================================
 
 def _fuzzy_name_match(name1: str, name2: str, threshold: float = 0.70) -> bool:
@@ -136,7 +152,7 @@ def _fuzzy_name_match(name1: str, name2: str, threshold: float = 0.70) -> bool:
     if n1 == n2:
         return True
 
-    # Token-based overlap
+    # Token-based overlap (all words of shorter name appear in longer name)
     tokens1 = set(n1.split())
     tokens2 = set(n2.split())
     if tokens1 and (tokens1.issubset(tokens2) or tokens2.issubset(tokens1)):
@@ -147,82 +163,172 @@ def _fuzzy_name_match(name1: str, name2: str, threshold: float = 0.70) -> bool:
     return ratio >= threshold
 
 
-def process_id_card_verification(
+async def process_id_card_verification(
     db: Session,
     user: User,
-    id_card_image_bytes: Optional[bytes] = None,
-    qr_token: Optional[str] = None,
-    portal_snapshot: Optional[Dict[str, Any]] = None,
-) -> Tuple[bool, str, str]:
+    id_card_image_bytes: bytes,
+) -> Tuple[bool, str, str, Optional[str]]:
     """
-    Processes student ID card upload & server-side verification:
-    1. Validates image format and size (if bytes provided).
-    2. Stores private Supabase Storage object path (never a public URL).
-    3. Cross-checks roll number (exact) and student name (fuzzy match).
-    4. Auto-verifies if criteria met; routes to pending manual review otherwise.
+    Full server-side student verification pipeline:
+
+    1.  Validates image format and size (Pillow).
+    2.  Stores a private storage path for the ID card image.
+    3.  Decodes QR from image using OpenCV + pyzbar (qr_service).
+    4.  Validates QR URL format (must be PSIT card-preview URL with 32-hex token).
+    5.  Fetches student data from the PSIT portal API (psit_portal_service).
+    6.  Cross-checks roll number (exact) and name (fuzzy ≥ 70%).
+    7.  Auto-verifies on full match; routes to pending_review on any failure.
+
+    Args:
+        db:                   SQLAlchemy DB session.
+        user:                 Authenticated student user object.
+        id_card_image_bytes:  Raw JPEG/PNG bytes of the uploaded ID card photo.
+
+    Returns:
+        Tuple of (verified: bool, status_code: str, message: str, qr_token: Optional[str])
+        where status_code is one of:
+            "auto_verified"     – QR + portal cross-check passed
+            "qr_unreadable"     – OpenCV/pyzbar could not find a valid PSIT QR
+            "portal_unavailable"– PSIT portal API returned no usable data
+            "pending_review"    – Data fetched but roll/name mismatch; admin queue
     """
-    # 1. Image validation if image content passed
-    if id_card_image_bytes:
-        # Enforce max 5MB size limit
-        if len(id_card_image_bytes) > 5 * 1024 * 1024:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="ID card image exceeds 5MB size limit."
-            )
-        try:
-            img = Image.open(io.BytesIO(id_card_image_bytes))
-            img.verify()  # Validate image headers
-        except Exception:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid image format. Please upload a valid JPEG or PNG ID card photo."
-            )
+    # ── Step 1: Validate image ────────────────────────────────────────
+    if len(id_card_image_bytes) > 5 * 1024 * 1024:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="ID card image exceeds the 5 MB size limit."
+        )
+    try:
+        img_check = Image.open(io.BytesIO(id_card_image_bytes))
+        img_check.verify()
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid image format. Please upload a clear JPEG or PNG photo of your PSIT ID card."
+        )
 
-        # Store private storage path
-        private_path = f"id-cards/{user.psit_roll_no}_{uuid.uuid4().hex[:8]}.jpg"
-        user.id_card_image_url = private_path
+    # ── Step 2: Store private image path ─────────────────────────────
+    private_path = f"id-cards/{user.psit_roll_no}_{uuid.uuid4().hex[:8]}.jpg"
+    user.id_card_image_url = private_path
 
-    # 2. Record QR token if decoded or supplied
-    if qr_token:
-        user.qr_token = qr_token.strip()
+    # ── Step 3: Server-side QR decode ────────────────────────────────
+    qr_token: Optional[str] = None
+    try:
+        qr_token = decode_qr_from_image(id_card_image_bytes)
+    except (ImportError, OSError, FileNotFoundError) as exc:
+        logger.error("QR scanning libraries error (%s). Routing student to manual review.", exc)
+        _commit_pending(db, user, f"QR scanning service error: {exc}")
+        return False, "qr_unreadable", (
+            "QR scanning is currently unavailable on this server. "
+            "Your ID card photo has been saved and your account queued for admin manual review."
+        ), None
+    except ValueError as exc:
+        logger.warning("QR decode ValueError for user %s: %s", user.psit_roll_no, exc)
+        _commit_pending(db, user, str(exc))
+        return False, "qr_unreadable", (
+            "Your ID card photo could not be read as a valid image. "
+            "Please re-upload a clear, well-lit JPEG or PNG photo."
+        ), None
+    except Exception as exc:
+        logger.error("Unexpected error in QR scanning for user %s: %s", user.psit_roll_no, exc)
+        _commit_pending(db, user, f"QR scan error: {exc}")
+        return False, "qr_unreadable", (
+            "Unable to process the QR code on your ID card photo. "
+            "Your account has been added to the admin manual review queue."
+        ), None
 
-    # 3. Server-side portal cross-check
-    matched = False
-    if portal_snapshot and isinstance(portal_snapshot, dict):
-        user.portal_snapshot_json = portal_snapshot
+    if not qr_token:
+        logger.info("No PSIT QR found in ID card photo for user %s.", user.psit_roll_no)
+        _commit_pending(db, user, "No readable PSIT QR code found in image.")
+        return False, "qr_unreadable", (
+            "No PSIT QR code could be read from your ID card photo. "
+            "Please upload a clearer image where the QR code is fully visible, "
+            "then try again — or wait for admin manual review."
+        ), None
 
-        portal_roll = str(portal_snapshot.get("roll_no", portal_snapshot.get("psit_roll_no", ""))).strip()
-        portal_name = str(portal_snapshot.get("student_name", portal_snapshot.get("name", ""))).strip()
+    if not validate_psit_qr_token(qr_token):
+        logger.warning("Invalid QR token format '%s' for user %s.", qr_token, user.psit_roll_no)
+        _commit_pending(db, user, f"QR token format invalid: {qr_token}")
+        return False, "qr_unreadable", (
+            "The QR code on your ID card does not match the expected PSIT format. "
+            "Ensure you are uploading your official PSIT ID card."
+        ), None
 
-        # Check exact roll number match
-        roll_matched = portal_roll.lower() == user.psit_roll_no.strip().lower()
+    # Store the decoded QR token (private — stripped from public API responses)
+    user.qr_token = qr_token
 
-        # Check fuzzy name match
-        name_matched = _fuzzy_name_match(user.name, portal_name) if portal_name else False
+    # ── Step 4: Fetch student data from PSIT portal ───────────────────
+    portal_data: Optional[Dict[str, Any]] = None
+    try:
+        portal_data = await fetch_psit_student_data(qr_token)
+    except Exception as exc:
+        logger.error("Unexpected error fetching PSIT portal data for token %s: %s", qr_token, exc)
 
-        if roll_matched and name_matched:
-            matched = True
+    if portal_data is None:
+        logger.info(
+            "PSIT portal returned no data for token %s (user %s). Routing to manual review.",
+            qr_token, user.psit_roll_no
+        )
+        _commit_pending(db, user, "PSIT portal did not return usable student data.")
+        return False, "portal_unavailable", (
+            "Your QR code was successfully read, but our system could not retrieve your "
+            "details from the PSIT portal right now. Your account has been added to the "
+            "admin manual review queue. Expected turnaround: under 24 hours."
+        ), qr_token
 
-    # 4. Decision: Auto-verify vs. Pending Review
-    if matched:
+    # Store portal snapshot (private; never exposed in public API responses)
+    user.portal_snapshot_json = portal_data.get("_raw", portal_data)
+
+    # ── Step 5: Cross-check roll number & name ────────────────────────
+    portal_roll = portal_data.get("roll_no", "").strip().upper()
+    portal_name = portal_data.get("student_name", "").strip()
+
+    roll_matched = portal_roll == user.psit_roll_no.strip().upper()
+    name_matched = _fuzzy_name_match(user.name, portal_name) if portal_name else False
+
+    if roll_matched and name_matched:
+        # ── Auto-verified ─────────────────────────────────────────────
         user.verified = True
         user.verification_method = VerificationMethod.QR_AUTO
         user.verified_at = datetime.now(timezone.utc)
-        status_code_str = "auto_verified"
-        message = "ID card and QR code successfully verified via PSIT portal."
+        db.commit()
+        db.refresh(user)
+        logger.info("User %s auto-verified via PSIT portal QR check.", user.psit_roll_no)
+        return True, "auto_verified", (
+            "Your PSIT ID card was verified successfully. "
+            "You can now link your GitHub account and start claiming issues."
+        ), qr_token
     else:
-        user.verified = False
-        user.verification_method = None
-        user.verified_at = None
-        status_code_str = "pending_review"
-        message = (
-            "ID card uploaded. Details could not be automatically confirmed with the portal; "
-            "account has been submitted to the admin queue for manual approval."
+        # ── Mismatch → manual review ──────────────────────────────────
+        mismatch_detail = []
+        if not roll_matched:
+            mismatch_detail.append(
+                f"Roll number mismatch: registered '{user.psit_roll_no}', portal returned '{portal_roll}'."
+            )
+        if not name_matched:
+            mismatch_detail.append(
+                f"Name mismatch: registered '{user.name}', portal returned '{portal_name}'."
+            )
+        detail_str = " ".join(mismatch_detail)
+        logger.info(
+            "User %s routed to manual review. %s", user.psit_roll_no, detail_str
         )
+        _commit_pending(db, user, detail_str)
+        return False, "pending_review", (
+            "Your ID card was scanned but the details on the card don't exactly match "
+            "what you registered with. Your account has been added to the admin manual "
+            "review queue. Expected turnaround: under 24 hours."
+        ), qr_token
 
+
+def _commit_pending(db: Session, user: User, reason: str) -> None:
+    """Helper: commit user state as unverified and flush to DB."""
+    user.verified = False
+    user.verification_method = None
+    user.verified_at = None
+    # Keep portal_snapshot_json and qr_token already set on user object (if any)
     db.commit()
     db.refresh(user)
-    return user.verified, status_code_str, message
 
 
 # =====================================================================
@@ -280,8 +386,94 @@ def review_manual_verification(
 
 
 # =====================================================================
-# GitHub OAuth Linking
+# GitHub OAuth — Code Exchange & Identity Linking
 # =====================================================================
+
+async def exchange_github_oauth_code(code: str) -> Dict[str, Any]:
+    """
+    Exchange a one-time GitHub OAuth code for an access token, then
+    fetch the authenticated user's GitHub profile.
+
+    Args:
+        code: The one-time code sent by GitHub to the redirect URI.
+
+    Returns:
+        Dict with keys: github_username, github_id, name, email, avatar_url
+
+    Raises:
+        HTTPException 400 if GitHub rejects the code.
+        HTTPException 502 if GitHub is unreachable.
+    """
+    client_id = settings.GITHUB_CLIENT_ID
+    client_secret = settings.GITHUB_CLIENT_SECRET
+
+    if not client_id or not client_secret:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "GitHub OAuth is not configured on this server. "
+                "Set GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET environment variables."
+            )
+        )
+
+    async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as client:
+        # Step 1: exchange code → access_token
+        try:
+            token_resp = await client.post(
+                "https://github.com/login/oauth/access_token",
+                json={
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "code": code,
+                },
+                headers={"Accept": "application/json"},
+            )
+        except httpx.RequestError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Could not reach GitHub OAuth servers: {exc}"
+            )
+
+        token_data = token_resp.json()
+        access_token = token_data.get("access_token")
+        if not access_token:
+            error_desc = token_data.get("error_description", token_data.get("error", "unknown error"))
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"GitHub OAuth code exchange failed: {error_desc}"
+            )
+
+        # Step 2: fetch GitHub user profile with the token
+        try:
+            user_resp = await client.get(
+                "https://api.github.com/user",
+                headers={
+                    "Authorization": f"Bearer {access_token}",
+                    "Accept": "application/vnd.github+json",
+                    "X-GitHub-Api-Version": "2022-11-28",
+                },
+            )
+        except httpx.RequestError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail=f"Could not fetch GitHub user profile: {exc}"
+            )
+
+        if user_resp.status_code != 200:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="GitHub returned an error when fetching user profile."
+            )
+
+        gh_user = user_resp.json()
+        return {
+            "github_username": gh_user.get("login", ""),
+            "github_id": str(gh_user.get("id", "")),
+            "name": gh_user.get("name") or gh_user.get("login", ""),
+            "email": gh_user.get("email"),
+            "avatar_url": gh_user.get("avatar_url"),
+        }
+
 
 def link_github_account(
     db: Session,

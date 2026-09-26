@@ -32,7 +32,7 @@
           "Auth & Verification"
         ],
         "summary": "Register as a new student",
-        "description": "Register student with official PSIT roll number and name.\nAccount is created in unverified state pending ID card / QR verification.",
+        "description": "Register student with official PSIT roll number (exactly 13 alphanumeric chars) and name.\nAccount is created in unverified state \u2014 student must complete ID card / QR verification next.",
         "operationId": "signup_auth_signup_post",
         "requestBody": {
           "content": {
@@ -74,7 +74,7 @@
           "Auth & Verification"
         ],
         "summary": "Log in with roll number or email",
-        "description": "Authenticate student, maintainer, or admin.\nIssues a cryptographically signed JWT scoped by user ID and role.",
+        "description": "Authenticate student, maintainer, or admin.\nIssues a cryptographically signed JWT scoped by user ID and role.\nUnverified students can still log in but cannot claim issues.",
         "operationId": "login_auth_login_post",
         "requestBody": {
           "content": {
@@ -116,7 +116,7 @@
           "Auth & Verification"
         ],
         "summary": "Get authenticated user session",
-        "description": "Retrieve profile details for the currently logged-in user session.\nProtected by JWT Bearer token authentication.",
+        "description": "Retrieve profile for the currently logged-in user. Protected by Bearer JWT.",
         "operationId": "get_me_auth_me_get",
         "parameters": [
           {
@@ -185,8 +185,8 @@
         "tags": [
           "Auth & Verification"
         ],
-        "summary": "Submit ID card and QR code for verification",
-        "description": "Server-side student verification:\n1. Validates ID card photo format and size.\n2. Performs server-side cross-check of roll number and fuzzy name against portal record.\n3. Auto-verifies on exact roll + fuzzy name match; routes to admin review queue on mismatch/missing data.",
+        "summary": "Submit ID card photo for server-side QR + PSIT portal verification",
+        "description": "Server-side student verification \u2014 **the client sends only the raw image**.\n\nPipeline (all server-side):\n1. Validates JPEG/PNG format and \u22645 MB size.\n2. Decodes QR from image using OpenCV + pyzbar (5-attempt pipeline).\n3. Validates QR URL format: https://www.psit.ac.in/op/card-preview/<32-hex-token>\n4. Fetches student data from PSIT portal API using the 32-char token.\n5. Cross-checks: roll number must match exactly; name must fuzzy-match \u226570%.\n6. Auto-verifies on full match.\n   On any failure \u2192 admin manual review queue (never silent rejection).",
         "operationId": "verify_id_card_auth_verify_id_post",
         "parameters": [
           {
@@ -266,7 +266,7 @@
           "Auth & Verification"
         ],
         "summary": "Admin review queue for pending verifications",
-        "description": "Admin-only review queue: returns unverified students who uploaded ID card photos\nthat require manual review and verification decision.",
+        "description": "Admin-only: returns unverified students who uploaded ID card photos\nbut could not be auto-verified (QR unreadable / portal unavailable / name mismatch).",
         "operationId": "get_pending_verifications_auth_pending_verifications_get",
         "parameters": [
           {
@@ -363,7 +363,7 @@
           "Auth & Verification"
         ],
         "summary": "Admin approve or reject student verification",
-        "description": "Admin decision: approve or reject student verification.\nIf approved, student's account is verified with method 'manual'.",
+        "description": "Admin decision: approve or reject student after manual ID review.",
         "operationId": "manual_verify_student_auth_verify_manual__student_id__post",
         "parameters": [
           {
@@ -451,8 +451,8 @@
         "tags": [
           "Auth & Verification"
         ],
-        "summary": "Initiate GitHub OAuth login URL",
-        "description": "Returns GitHub OAuth authorization URL for the frontend Auth Wizard.",
+        "summary": "Get GitHub OAuth authorization URL",
+        "description": "Returns the GitHub OAuth authorization URL for the frontend Auth Wizard.\nFrontend redirects the user to oauth_url; GitHub then redirects back to\nGITHUB_OAUTH_REDIRECT_URI with ?code=... which is handled by /auth/github/callback.",
         "operationId": "github_oauth_login_auth_github_login_get",
         "responses": {
           "200": {
@@ -466,13 +466,93 @@
         }
       }
     },
+    "/auth/github/callback": {
+      "post": {
+        "tags": [
+          "Auth & Verification"
+        ],
+        "summary": "GitHub OAuth callback \u2014 exchange code and link GitHub identity",
+        "description": "Called by the frontend after GitHub redirects back with ?code=...\n\nFlow:\n1. Exchange one-time code for GitHub access token (server-side).\n2. Fetch authenticated GitHub user profile (login, id).\n3. Link GitHub username + id to the student's platform account.\n4. Guard: one GitHub account per student; one student per GitHub account.",
+        "operationId": "github_oauth_callback_auth_github_callback_post",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GitHubOAuthCallbackRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubOAuthLinkResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/auth/github/link": {
       "post": {
         "tags": [
           "Auth & Verification"
         ],
-        "summary": "Link GitHub account to student profile",
-        "description": "Links authenticated student's profile to their verified GitHub username and GitHub ID.\nEnforces uniqueness across the event.",
+        "summary": "Manually link a GitHub username (fallback / dev use)",
+        "description": "Fallback: link GitHub username directly without OAuth code exchange.\nUsed during local development or if the OAuth flow is unavailable.\nPrefer /auth/github/callback for production.",
         "operationId": "link_github_auth_github_link_post",
         "parameters": [
           {
@@ -3605,6 +3685,21 @@
         ],
         "title": "ContributionValidationUpdate"
       },
+      "GitHubOAuthCallbackRequest": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code",
+            "description": "One-time OAuth code received from GitHub callback"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code"
+        ],
+        "title": "GitHubOAuthCallbackRequest",
+        "description": "Sent by frontend after GitHub redirects back with ?code=..."
+      },
       "GitHubOAuthLinkRequest": {
         "properties": {
           "github_username": {
@@ -4945,10 +5040,8 @@
           },
           "psit_roll_no": {
             "type": "string",
-            "maxLength": 50,
-            "minLength": 2,
             "title": "Psit Roll No",
-            "description": "Official PSIT roll number"
+            "description": "Official PSIT roll number \u2014 exactly 13 alphanumeric characters"
           }
         },
         "type": "object",
@@ -5472,51 +5565,21 @@
           "psit_roll_no": {
             "type": "string",
             "title": "Psit Roll No",
-            "description": "Student roll number to verify"
-          },
-          "qr_token": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Qr Token",
-            "description": "Decoded QR payload from ID card"
+            "description": "Student roll number to verify (must be 13 chars)"
           },
           "id_card_image_base64": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
+            "type": "string",
             "title": "Id Card Image Base64",
-            "description": "Base64-encoded ID card photo"
-          },
-          "portal_snapshot": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Portal Snapshot",
-            "description": "PSIT portal student record"
+            "description": "Base64-encoded ID card photo (JPEG or PNG). Strip the data:image/...;base64, prefix before sending."
           }
         },
         "type": "object",
         "required": [
-          "psit_roll_no"
+          "psit_roll_no",
+          "id_card_image_base64"
         ],
-        "title": "VerifyIDCardRequest"
+        "title": "VerifyIDCardRequest",
+        "description": "Request body for POST /auth/verify-id.\n\nThe client sends the raw ID card image as a base64 string.\nThe backend performs ALL verification server-side:\n  1. Decodes the QR from the image using OpenCV + pyzbar\n  2. Validates the QR URL format (https://www.psit.ac.in/op/card-preview/<32-hex>)\n  3. Fetches student data from the PSIT portal API using the 32-char token\n  4. Cross-checks roll number (exact) and name (fuzzy) against registered values"
       },
       "VerifyIDCardResponse": {
         "properties": {
@@ -5537,6 +5600,17 @@
                 "type": "null"
               }
             ]
+          },
+          "qr_token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Qr Token"
           },
           "message": {
             "type": "string",

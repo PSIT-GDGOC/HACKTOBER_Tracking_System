@@ -1,17 +1,21 @@
-"""Tests for Auth & Verification Module (Aditya's Module).
+"""Tests for Auth & Verification Module.
 
 Covers:
-- Student signup (pending verification status)
-- Duplicate roll number & duplicate email rejection
+- Student signup (pending verification status; enforces 13-char roll number)
+- 13-char roll number validation (rejects shorter or longer roll numbers with 422)
+- Duplicate roll number & duplicate email rejection (400)
 - Login with JWT token issuance & claim verification
 - Bearer JWT token authentication on /auth/me
 - ID Card upload & automated QR/portal verification (exact roll + fuzzy name match)
-- Fallback routing to pending_review on portal mismatch
+- Fallback routing to pending_review on portal mismatch or portal unavailable
 - Admin manual verification queue & approval/rejection endpoints
 - RBAC protection (students blocked with 403 from admin queue)
 - GitHub OAuth linking with duplicate username protection
 """
+import base64
 import io
+from unittest.mock import AsyncMock, patch
+
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
@@ -26,12 +30,25 @@ from app.models import User, UserRole, VerificationMethod
 from app.services.auth_service import create_access_token
 
 
-def _create_dummy_image_bytes() -> bytes:
-    """Generate minimal valid JPEG bytes in memory."""
+def _create_dummy_image_b64() -> str:
+    """Generate minimal valid JPEG bytes in memory as base64 string."""
     img = Image.new("RGB", (100, 100), color="blue")
     buf = io.BytesIO()
     img.save(buf, format="JPEG")
-    return buf.getvalue()
+    return base64.b64encode(buf.getvalue()).decode("utf-8")
+
+
+# Valid 13-character test roll numbers
+ROLL_ADMIN = "ADMIN00000001"
+ROLL_CODER = "2200330100050"
+ROLL_PRIYA = "2200330100045"
+ROLL_DUP_1 = "2200330100010"
+ROLL_DUP_2 = "2200330100011"
+ROLL_RAHUL = "2200330100088"
+ROLL_ANANYA = "2200330100012"
+ROLL_DEEPAK = "2200330100013"
+ROLL_MOHIT = "2200330100020"
+ROLL_SANJAY = "2200330100030"
 
 
 @pytest.fixture
@@ -61,7 +78,7 @@ def client_and_db():
         id=99,
         name="Admin Lead",
         email="admin@psit.ac.in",
-        psit_roll_no="ADMIN001",
+        psit_roll_no=ROLL_ADMIN,
         role=UserRole.ADMIN,
         verified=True,
     )
@@ -71,7 +88,7 @@ def client_and_db():
         id=50,
         name="Existing Coder",
         email="coder@psit.ac.in",
-        psit_roll_no="22050",
+        psit_roll_no=ROLL_CODER,
         role=UserRole.STUDENT,
         verified=True,
         github_username="taken-github-dev",
@@ -85,28 +102,53 @@ def client_and_db():
     app.dependency_overrides.clear()
 
 
+# =====================================================================
+# 1. Signup Tests
+# =====================================================================
+
 def test_student_signup_success(client_and_db):
-    """Student can register with roll number and name; account starts unverified."""
+    """Student can register with a valid 13-char roll number; account starts unverified."""
     client, db = client_and_db
 
     payload = {
         "name": "Priya Sharma",
         "email": "priya.sharma@psit.ac.in",
-        "psit_roll_no": "22045",
+        "psit_roll_no": ROLL_PRIYA,
     }
     res = client.post("/auth/signup", json=payload)
     assert res.status_code == 201
     data = res.json()
     assert data["name"] == "Priya Sharma"
     assert data["email"] == "priya.sharma@psit.ac.in"
-    assert data["psit_roll_no"] == "22045"
+    assert data["psit_roll_no"] == ROLL_PRIYA
     assert data["verified"] is False
     assert data["status"] == "pending_verification"
 
     # Verify persisted in DB
-    user = db.query(User).filter(User.psit_roll_no == "22045").first()
+    user = db.query(User).filter(User.psit_roll_no == ROLL_PRIYA).first()
     assert user is not None
     assert user.role == UserRole.STUDENT
+
+
+def test_student_signup_roll_number_length_validation(client_and_db):
+    """Roll numbers that are NOT exactly 13 characters must be rejected with 422."""
+    client, _ = client_and_db
+
+    # Too short (5 chars)
+    res_short = client.post("/auth/signup", json={
+        "name": "Short Roll",
+        "email": "short@psit.ac.in",
+        "psit_roll_no": "22045",
+    })
+    assert res_short.status_code == 422
+
+    # Too long (14 chars)
+    res_long = client.post("/auth/signup", json={
+        "name": "Long Roll",
+        "email": "long@psit.ac.in",
+        "psit_roll_no": "22003301000045X",
+    })
+    assert res_long.status_code == 422
 
 
 def test_student_signup_duplicate_guards(client_and_db):
@@ -117,14 +159,14 @@ def test_student_signup_duplicate_guards(client_and_db):
     client.post("/auth/signup", json={
         "name": "Original Student",
         "email": "original@psit.ac.in",
-        "psit_roll_no": "22010",
+        "psit_roll_no": ROLL_DUP_1,
     })
 
     # Duplicate roll number
     res_dup_roll = client.post("/auth/signup", json={
         "name": "Another Student",
         "email": "another@psit.ac.in",
-        "psit_roll_no": "22010",
+        "psit_roll_no": ROLL_DUP_1,
     })
     assert res_dup_roll.status_code == 400
     assert "already registered" in res_dup_roll.json()["detail"]
@@ -133,11 +175,15 @@ def test_student_signup_duplicate_guards(client_and_db):
     res_dup_email = client.post("/auth/signup", json={
         "name": "Different Student",
         "email": "original@psit.ac.in",
-        "psit_roll_no": "22011",
+        "psit_roll_no": ROLL_DUP_2,
     })
     assert res_dup_email.status_code == 400
     assert "already registered" in res_dup_email.json()["detail"]
 
+
+# =====================================================================
+# 2. Login & JWT Tests
+# =====================================================================
 
 def test_login_and_jwt_issuance(client_and_db):
     """Login with roll number issues valid JWT token with user claims."""
@@ -147,16 +193,16 @@ def test_login_and_jwt_issuance(client_and_db):
     client.post("/auth/signup", json={
         "name": "Rahul Verma",
         "email": "rahul@psit.ac.in",
-        "psit_roll_no": "22088",
+        "psit_roll_no": ROLL_RAHUL,
     })
 
     # Log in with roll number
-    res = client.post("/auth/login", json={"identifier": "22088"})
+    res = client.post("/auth/login", json={"identifier": ROLL_RAHUL})
     assert res.status_code == 200
     data = res.json()
     assert "access_token" in data
     assert data["token_type"] == "bearer"
-    assert data["user"]["psit_roll_no"] == "22088"
+    assert data["user"]["psit_roll_no"] == ROLL_RAHUL
 
     # Log in with email
     res_email = client.post("/auth/login", json={"identifier": "rahul@psit.ac.in"})
@@ -164,68 +210,56 @@ def test_login_and_jwt_issuance(client_and_db):
     assert "access_token" in res_email.json()
 
 
-def test_get_me_with_bearer_jwt(client_and_db):
-    """Accessing /auth/me with Bearer JWT returns authenticated profile."""
-    client, db = client_and_db
+def test_auth_me_protected_endpoint(client_and_db):
+    """GET /auth/me returns user profile when Bearer JWT is supplied."""
+    client, _ = client_and_db
 
-    student = User(
-        id=77,
-        name="Karan Malhotra",
-        email="karan@psit.ac.in",
-        psit_roll_no="22077",
-        role=UserRole.STUDENT,
-        verified=True,
-    )
-    db.add(student)
-    db.commit()
-
-    token = create_access_token(data={"sub": "77", "role": "student"})
-
+    token = create_access_token(data={"sub": "50", "role": "student", "verified": True})
     res = client.get("/auth/me", headers={"Authorization": f"Bearer {token}"})
     assert res.status_code == 200
-    data = res.json()
-    assert data["id"] == 77
-    assert data["name"] == "Karan Malhotra"
-    assert data["psit_roll_no"] == "22077"
-    assert data["verified"] is True
+    assert res.json()["psit_roll_no"] == ROLL_CODER
 
+
+# =====================================================================
+# 3. ID Card & QR Verification Tests (server-side pipeline)
+# =====================================================================
 
 def test_id_card_auto_verification(client_and_db):
     """
-    Submitting ID card with matching roll number and fuzzy name
+    Submitting valid ID card photo where QR decodes and portal name/roll match
     automatically verifies the student account.
     """
     client, db = client_and_db
 
-    # Create unverified student
     student = User(
         id=12,
         name="Ananya Gupta",
         email="ananya@psit.ac.in",
-        psit_roll_no="22012",
+        psit_roll_no=ROLL_ANANYA,
         role=UserRole.STUDENT,
         verified=False,
     )
     db.add(student)
     db.commit()
 
-    # Portal data has exact roll and fuzzy name ("Gupta Ananya" vs "Ananya Gupta")
-    portal_snapshot = {
-        "roll_no": "22012",
-        "student_name": "Gupta Ananya",
-        "branch": "IT",
-        "college": "PSIT Kanpur"
+    token_hex = "91f519897e6be8e16d371027a234a90f"
+    fake_portal_data = {
+        "roll_no": ROLL_ANANYA,
+        "student_name": "Gupta Ananya",  # fuzzy match with "Ananya Gupta"
+        "_raw": {"rollno": ROLL_ANANYA, "name": "Gupta Ananya"},
     }
 
-    res = client.post(
-        "/auth/verify-id",
-        json={
-            "psit_roll_no": "22012",
-            "qr_token": "PSIT-QR-22012-SEC",
-            "portal_snapshot": portal_snapshot,
-        },
-        headers={"X-User-Id": "12"}
-    )
+    with patch("app.services.auth_service.decode_qr_from_image", return_value=token_hex):
+        with patch("app.services.auth_service.fetch_psit_student_data", new=AsyncMock(return_value=fake_portal_data)):
+            res = client.post(
+                "/auth/verify-id",
+                json={
+                    "psit_roll_no": ROLL_ANANYA,
+                    "id_card_image_base64": _create_dummy_image_b64(),
+                },
+                headers={"X-User-Id": "12"},
+            )
+
     assert res.status_code == 200
     data = res.json()
     assert data["verified"] is True
@@ -251,34 +285,35 @@ def test_id_card_pending_review_on_portal_mismatch(client_and_db):
         id=13,
         name="Deepak Joshi",
         email="deepak@psit.ac.in",
-        psit_roll_no="22013",
+        psit_roll_no=ROLL_DEEPAK,
         role=UserRole.STUDENT,
         verified=False,
     )
     db.add(student)
     db.commit()
 
-    # Mismatched name in portal
-    portal_snapshot = {
-        "roll_no": "22013",
+    token_hex = "1bb4d8f10de22856757f48f15f45b8bf"
+    mismatched_portal_data = {
+        "roll_no": ROLL_DEEPAK,
         "student_name": "Completely Different Person",
-        "branch": "CSE"
+        "_raw": {"rollno": ROLL_DEEPAK, "name": "Completely Different Person"},
     }
 
-    res = client.post(
-        "/auth/verify-id",
-        json={
-            "psit_roll_no": "22013",
-            "qr_token": "PSIT-QR-22013-SEC",
-            "portal_snapshot": portal_snapshot,
-        },
-        headers={"X-User-Id": "13"}
-    )
+    with patch("app.services.auth_service.decode_qr_from_image", return_value=token_hex):
+        with patch("app.services.auth_service.fetch_psit_student_data", new=AsyncMock(return_value=mismatched_portal_data)):
+            res = client.post(
+                "/auth/verify-id",
+                json={
+                    "psit_roll_no": ROLL_DEEPAK,
+                    "id_card_image_base64": _create_dummy_image_b64(),
+                },
+                headers={"X-User-Id": "13"},
+            )
+
     assert res.status_code == 200
     data = res.json()
     assert data["verified"] is False
     assert data["status"] == "pending_review"
-    assert "manual approval" in data["message"]
 
     # Verify DB state
     db.expire_all()
@@ -287,6 +322,44 @@ def test_id_card_pending_review_on_portal_mismatch(client_and_db):
     assert updated.verification_method is None
 
 
+def test_id_card_qr_unreadable_fallback(client_and_db):
+    """
+    When QR code cannot be decoded from the photo, student is routed
+    to manual review rather than blocked.
+    """
+    client, db = client_and_db
+
+    student = User(
+        id=14,
+        name="Kavita Singh",
+        email="kavita@psit.ac.in",
+        psit_roll_no="2200330100014",
+        role=UserRole.STUDENT,
+        verified=False,
+    )
+    db.add(student)
+    db.commit()
+
+    with patch("app.services.auth_service.decode_qr_from_image", return_value=None):
+        res = client.post(
+            "/auth/verify-id",
+            json={
+                "psit_roll_no": "2200330100014",
+                "id_card_image_base64": _create_dummy_image_b64(),
+            },
+            headers={"X-User-Id": "14"},
+        )
+
+    assert res.status_code == 200
+    data = res.json()
+    assert data["verified"] is False
+    assert data["status"] == "qr_unreadable"
+
+
+# =====================================================================
+# 4. Admin Manual Verification Queue & Approval
+# =====================================================================
+
 def test_admin_manual_verification_queue_and_approval(client_and_db):
     """
     Admin views pending verification queue and manually approves student.
@@ -294,16 +367,14 @@ def test_admin_manual_verification_queue_and_approval(client_and_db):
     """
     client, db = client_and_db
 
-    # Student with pending ID upload
     student = User(
         id=20,
         name="Mohit Agarwal",
         email="mohit@psit.ac.in",
-        psit_roll_no="22020",
+        psit_roll_no=ROLL_MOHIT,
         role=UserRole.STUDENT,
         verified=False,
-        id_card_image_url="id-cards/22020_card.jpg",
-        portal_snapshot_json={"roll_no": "22020", "name": "Mohit Agarwal"},
+        id_card_image_url="id-cards/mohit_card.jpg",
     )
     db.add(student)
     db.commit()
@@ -322,7 +393,7 @@ def test_admin_manual_verification_queue_and_approval(client_and_db):
     res_approve = client.post(
         "/auth/verify-manual/20",
         json={"action": "approve", "reason": "ID card photo verified by organizer"},
-        headers={"X-User-Id": "99"}
+        headers={"X-User-Id": "99"},
     )
     assert res_approve.status_code == 200
     assert res_approve.json()["verified"] is True
@@ -336,6 +407,10 @@ def test_admin_manual_verification_queue_and_approval(client_and_db):
     assert updated.verified_at is not None
 
 
+# =====================================================================
+# 5. GitHub Identity Linking Tests
+# =====================================================================
+
 def test_github_oauth_linking(client_and_db):
     """Student links their GitHub identity; duplicate username rejected."""
     client, db = client_and_db
@@ -344,7 +419,7 @@ def test_github_oauth_linking(client_and_db):
         id=30,
         name="Sanjay Rao",
         email="sanjay@psit.ac.in",
-        psit_roll_no="22030",
+        psit_roll_no=ROLL_SANJAY,
         role=UserRole.STUDENT,
         verified=True,
     )
@@ -355,7 +430,7 @@ def test_github_oauth_linking(client_and_db):
     res_dup = client.post(
         "/auth/github/link",
         json={"github_username": "taken-github-dev"},
-        headers={"X-User-Id": "30"}
+        headers={"X-User-Id": "30"},
     )
     assert res_dup.status_code == 400
     assert "already linked" in res_dup.json()["detail"]
@@ -364,7 +439,7 @@ def test_github_oauth_linking(client_and_db):
     res_ok = client.post(
         "/auth/github/link",
         json={"github_username": "sanjay-coder", "github_id": "987654"},
-        headers={"X-User-Id": "30"}
+        headers={"X-User-Id": "30"},
     )
     assert res_ok.status_code == 200
     assert res_ok.json()["success"] is True

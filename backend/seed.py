@@ -9,6 +9,9 @@ Populates the database with realistic test data across all 10 tables:
 
 from datetime import datetime, timezone
 import sys
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
 from sqlalchemy.exc import OperationalError
 from app.db import SessionLocal, engine, Base
 from app.models import (

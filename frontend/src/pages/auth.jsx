@@ -117,7 +117,7 @@ export function AuthWizard() {
     const roll = form.psit_roll_no.trim();
     if (form.name.trim().length < 2) return setError("Enter your full name as it appears on your PSIT ID card.");
     if (!/^\S+@\S+\.\S+$/.test(form.email)) return setError("Enter a valid email address.");
-    if (roll.length < 2) return setError("Enter your official PSIT roll number.");
+    if (roll.length !== 13) return setError("PSIT roll number must be exactly 13 characters (e.g. 2200320100001).");
     if (!form.agree) return setError("You need to accept the code of conduct to continue.");
     setError(null);
     const res = await signup.mutate({
