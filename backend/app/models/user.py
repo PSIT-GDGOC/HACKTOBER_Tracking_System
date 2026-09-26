@@ -1,6 +1,6 @@
 import enum
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum, JSON
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum, JSON, Index, text
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import relationship
 from app.db import Base
@@ -19,11 +19,20 @@ class VerificationMethod(str, enum.Enum):
 
 class User(Base):
     __tablename__ = "users"
+    __table_args__ = (
+        Index(
+            "ix_users_verified_psit_roll_no",
+            "psit_roll_no",
+            unique=True,
+            postgresql_where=text("verified = TRUE"),
+            sqlite_where=text("verified = 1"),
+        ),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False)
-    email = Column(String(255), unique=True, index=True, nullable=False)
-    psit_roll_no = Column(String(50), unique=True, index=True, nullable=False)
+    email = Column(String(255), index=True, nullable=False)
+    psit_roll_no = Column(String(50), index=True, nullable=False)
     
     # v2 ID Card & QR Verification fields
     id_card_image_url = Column(String(500), nullable=True)

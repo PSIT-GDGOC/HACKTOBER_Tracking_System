@@ -81,29 +81,56 @@ def decode_access_token(token: str) -> dict:
 def register_student(db: Session, name: str, email: str, psit_roll_no: str) -> User:
     """Register a new student in unverified state.
 
-    Roll number validation (exactly 13 alphanumeric chars) is enforced by the
-    Pydantic schema (SignupRequest.validate_roll_number) before this is called.
+    Only verified accounts are considered 'taken'. Unverified or pending
+    attempts never block a student from registering or retrying signup.
     """
     clean_roll = psit_roll_no.strip().upper()
     clean_email = email.strip().lower()
     clean_name = name.strip()
 
-    # 1. Check duplicate roll number
-    existing_roll = db.query(User).filter(User.psit_roll_no.ilike(clean_roll)).first()
-    if existing_roll:
+    # 1. Check duplicate roll number — ONLY against VERIFIED accounts
+    verified_roll = (
+        db.query(User)
+        .filter(User.psit_roll_no.ilike(clean_roll), User.verified == True)
+        .first()
+    )
+    if verified_roll:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"A student with roll number '{clean_roll}' is already registered."
+            detail=f"A verified student with roll number '{clean_roll}' is already registered. Please log in instead.",
         )
 
-    # 2. Check duplicate email
-    existing_email = db.query(User).filter(User.email.ilike(clean_email)).first()
-    if existing_email:
+    # 2. Check duplicate email — ONLY against VERIFIED accounts
+    verified_email = (
+        db.query(User)
+        .filter(User.email.ilike(clean_email), User.verified == True)
+        .first()
+    )
+    if verified_email:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"A student with email '{clean_email}' is already registered."
+            detail=f"A verified student with email '{clean_email}' is already registered. Please log in instead.",
         )
 
+    # 3. If an unverified pending account exists with this email or roll, reuse/update it
+    pending_user = (
+        db.query(User)
+        .filter(
+            (User.email.ilike(clean_email)) | (User.psit_roll_no.ilike(clean_roll)),
+            User.verified == False,
+        )
+        .first()
+    )
+    if pending_user:
+        pending_user.name = clean_name
+        pending_user.email = clean_email
+        pending_user.psit_roll_no = clean_roll
+        db.commit()
+        db.refresh(pending_user)
+        logger.info("Reused pending unverified account (id=%s) for %s", pending_user.id, clean_roll)
+        return pending_user
+
+    # 4. Otherwise, create a new pending unverified record
     new_user = User(
         name=clean_name,
         email=clean_email,
@@ -260,6 +287,27 @@ async def process_id_card_verification(
     # ── Step 3b: Direct roll number match in QR ───────────────────────
     clean_user_roll = user.psit_roll_no.strip().upper()
     if clean_user_roll in qr_token.strip().upper():
+        # Check uniqueness against other VERIFIED accounts
+        dup = (
+            db.query(User)
+            .filter(
+                User.psit_roll_no.ilike(clean_user_roll),
+                User.verified == True,
+                User.id != user.id,
+            )
+            .first()
+        )
+        if dup:
+            logger.warning(
+                "Roll number '%s' is already verified under another account (id=%s).",
+                clean_user_roll, dup.id
+            )
+            _commit_pending(db, user, f"Roll number '{clean_user_roll}' is already verified under another account.")
+            return False, "duplicate_verified_roll", (
+                f"This roll number '{clean_user_roll}' is already verified under another account. "
+                "Each PSIT student roll number can only be verified once."
+            ), qr_token
+
         user.verified = True
         user.verification_method = VerificationMethod.QR_AUTO
         user.verified_at = datetime.now(timezone.utc)
@@ -301,6 +349,27 @@ async def process_id_card_verification(
     name_matched = _fuzzy_name_match(user.name, portal_name) if portal_name else False
 
     if roll_matched and name_matched:
+        # Check uniqueness against other VERIFIED accounts
+        dup = (
+            db.query(User)
+            .filter(
+                User.psit_roll_no.ilike(clean_user_roll),
+                User.verified == True,
+                User.id != user.id,
+            )
+            .first()
+        )
+        if dup:
+            logger.warning(
+                "Roll number '%s' is already verified under another account (id=%s).",
+                clean_user_roll, dup.id
+            )
+            _commit_pending(db, user, f"Roll number '{clean_user_roll}' is already verified under another account.")
+            return False, "duplicate_verified_roll", (
+                f"This roll number '{clean_user_roll}' is already verified under another account. "
+                "Each PSIT student roll number can only be verified once."
+            ), qr_token
+
         # ── Auto-verified ─────────────────────────────────────────────
         user.verified = True
         user.verification_method = VerificationMethod.QR_AUTO
@@ -381,6 +450,21 @@ def review_manual_verification(
         )
 
     if action.lower() == "approve":
+        clean_roll = student.psit_roll_no.strip().upper()
+        dup = (
+            db.query(User)
+            .filter(
+                User.psit_roll_no.ilike(clean_roll),
+                User.verified == True,
+                User.id != student.id,
+            )
+            .first()
+        )
+        if dup:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Cannot approve: roll number '{clean_roll}' is already verified under another account (user ID {dup.id}).",
+            )
         student.verified = True
         student.verification_method = VerificationMethod.MANUAL
         student.verified_at = datetime.now(timezone.utc)

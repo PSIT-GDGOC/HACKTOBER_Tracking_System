@@ -152,17 +152,33 @@ def test_student_signup_roll_number_length_validation(client_and_db):
 
 
 def test_student_signup_duplicate_guards(client_and_db):
-    """Duplicate roll numbers and duplicate emails must be rejected with 400."""
-    client, _ = client_and_db
+    """Duplicate roll numbers and duplicate emails of verified accounts must be rejected with 400.
+    Unverified accounts never block retrying signup."""
+    client, db = client_and_db
 
     # Register first student
-    client.post("/auth/signup", json={
+    res1 = client.post("/auth/signup", json={
         "name": "Original Student",
         "email": "original@psit.ac.in",
         "psit_roll_no": ROLL_DUP_1,
     })
+    assert res1.status_code == 201
 
-    # Duplicate roll number
+    # Before verification: an unverified pending account should NOT block retrying signup!
+    res_retry = client.post("/auth/signup", json={
+        "name": "Original Student Updated",
+        "email": "original@psit.ac.in",
+        "psit_roll_no": ROLL_DUP_1,
+    })
+    assert res_retry.status_code == 201
+    assert res_retry.json()["name"] == "Original Student Updated"
+
+    # Now mark the first student as verified in DB
+    user = db.query(User).filter(User.psit_roll_no == ROLL_DUP_1).first()
+    user.verified = True
+    db.commit()
+
+    # Once verified: duplicate roll number must be rejected with 400
     res_dup_roll = client.post("/auth/signup", json={
         "name": "Another Student",
         "email": "another@psit.ac.in",
@@ -171,7 +187,7 @@ def test_student_signup_duplicate_guards(client_and_db):
     assert res_dup_roll.status_code == 400
     assert "already registered" in res_dup_roll.json()["detail"]
 
-    # Duplicate email
+    # Once verified: duplicate email must be rejected with 400
     res_dup_email = client.post("/auth/signup", json={
         "name": "Different Student",
         "email": "original@psit.ac.in",
