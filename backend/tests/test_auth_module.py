@@ -236,6 +236,67 @@ def test_auth_me_protected_endpoint(client_and_db):
     assert res.json()["psit_roll_no"] == ROLL_CODER
 
 
+def test_password_setup_and_login_enforcement(client_and_db):
+    """
+    Once a student sets a password, login strictly enforces the password.
+    Wrong or missing password yields 401; correct password returns JWT.
+    """
+    client, db = client_and_db
+
+    # Register student
+    reg_res = client.post("/auth/signup", json={
+        "name": "Secured Student",
+        "email": "secured@psit.ac.in",
+        "psit_roll_no": "2200330100099",
+    })
+    assert reg_res.status_code == 201
+
+    # Log in initially before password is set to get onboarding session
+    login_init = client.post("/auth/login", json={"identifier": "2200330100099"})
+    assert login_init.status_code == 200
+    token = login_init.json()["access_token"]
+
+    # 1. Attempt setting a weak password (too short)
+    weak_res = client.post(
+        "/auth/set-password",
+        json={"password": "short"},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert weak_res.status_code in [400, 422]
+
+    # 2. Set a strong password
+    strong_pwd = "P@ssword2026!Strong"
+    set_res = client.post(
+        "/auth/set-password",
+        json={"password": strong_pwd},
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert set_res.status_code == 200
+    assert set_res.json()["success"] is True
+
+    # 3. Logging in WITHOUT password must now be REJECTED with 401
+    no_pwd_res = client.post("/auth/login", json={"identifier": "2200330100099"})
+    assert no_pwd_res.status_code == 401
+    assert "Invalid roll number or password" in no_pwd_res.json()["detail"]
+
+    # 4. Logging in with WRONG password must be REJECTED with 401
+    wrong_pwd_res = client.post("/auth/login", json={
+        "identifier": "2200330100099",
+        "password": "WrongPassword123!",
+    })
+    assert wrong_pwd_res.status_code == 401
+    assert "Invalid roll number or password" in wrong_pwd_res.json()["detail"]
+
+    # 5. Logging in with CORRECT password must SUCCEED with 200
+    correct_pwd_res = client.post("/auth/login", json={
+        "identifier": "2200330100099",
+        "password": strong_pwd,
+    })
+    assert correct_pwd_res.status_code == 200
+    assert "access_token" in correct_pwd_res.json()
+    assert correct_pwd_res.json()["user"]["has_password"] is True
+
+
 # =====================================================================
 # 3. ID Card & QR Verification Tests (server-side pipeline)
 # =====================================================================

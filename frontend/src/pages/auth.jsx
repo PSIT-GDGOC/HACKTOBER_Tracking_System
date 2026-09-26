@@ -112,6 +112,43 @@ export function AuthWizard() {
   const linkGithub = useMutation(api.linkGithub);
   const [linked, setLinked] = useState(false);
 
+  /* password setup */
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [passwordSaved, setPasswordSaved] = useState(false);
+  const [passwordError, setPasswordError] = useState(null);
+  const [savingPassword, setSavingPassword] = useState(false);
+
+  const doSetPassword = async (e) => {
+    if (e) e.preventDefault();
+    setPasswordError(null);
+    if (password.length < 8) {
+      setPasswordError("Password must be at least 8 characters long.");
+      return;
+    }
+    const hasLetter = /[a-zA-Z]/.test(password);
+    const hasNonLetter = /[^a-zA-Z]/.test(password);
+    if (!hasLetter || !hasNonLetter) {
+      setPasswordError("Password must include at least one letter and one number or symbol.");
+      return;
+    }
+    if (password !== confirmPassword) {
+      setPasswordError("Passwords do not match.");
+      return;
+    }
+    setSavingPassword(true);
+    try {
+      await api.setPassword({ password });
+      setPasswordSaved(true);
+      setError(null);
+    } catch (err) {
+      setPasswordError(err?.detail || err?.message || "Failed to set password.");
+    } finally {
+      setSavingPassword(false);
+    }
+  };
+
   const doSignup = async (e) => {
     e.preventDefault();
     const roll = form.psit_roll_no.trim();
@@ -218,6 +255,10 @@ export function AuthWizard() {
   };
 
   const enterDashboard = async () => {
+    if (!passwordSaved) {
+      setPasswordError("Please create a password for your account before entering the dashboard.");
+      return;
+    }
     await refreshUser().catch(() => {});
     nav("/dashboard");
   };
@@ -452,6 +493,71 @@ export function AuthWizard() {
 
           {verifyResult?.verified && (
             <>
+              {/* Account Password Setup */}
+              {!passwordSaved ? (
+                <div className="mt-6 border-[3px] border-ink bg-white p-5 shadow-[5px_5px_0_0_#101010]">
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-6 w-6 items-center justify-center bg-gblue text-white font-mono text-xs font-bold border-2 border-ink">
+                      🔒
+                    </span>
+                    <h2 className="font-display text-lg font-extrabold uppercase tracking-tight">Create your account password</h2>
+                  </div>
+                  <p className="mt-1 text-xs text-ink-soft">
+                    Set a strong password so nobody else can log into your account with your roll number.
+                  </p>
+
+                  <form onSubmit={doSetPassword} className="mt-4 space-y-3">
+                    <Field label="New password" hint="Min. 8 characters with letters & numbers">
+                      <div className="relative">
+                        <Input
+                          type={showPassword ? "text" : "password"}
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                          placeholder="Enter strong password"
+                          className="font-mono pr-14"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowPassword(!showPassword)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono font-bold uppercase text-ink-soft hover:text-ink"
+                        >
+                          {showPassword ? "Hide" : "Show"}
+                        </button>
+                      </div>
+                    </Field>
+
+                    <Field label="Confirm password">
+                      <Input
+                        type={showPassword ? "text" : "password"}
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        placeholder="Re-type your password"
+                        className="font-mono"
+                      />
+                    </Field>
+
+                    {passwordError && <p className="font-mono text-xs font-bold text-gred">▲ {passwordError}</p>}
+
+                    <Button type="submit" variant="blue" size="md" loading={savingPassword} className="w-full">
+                      Save Password →
+                    </Button>
+                  </form>
+                </div>
+              ) : (
+                <div className="mt-6 border-[3px] border-ink bg-ggreen-light p-4 shadow-[4px_4px_0_0_#101010] flex items-center justify-between">
+                  <div className="flex items-center gap-2.5">
+                    <span className="flex h-7 w-7 items-center justify-center bg-ggreen text-white font-display text-sm font-extrabold border-2 border-ink">
+                      ✓
+                    </span>
+                    <div>
+                      <p className="font-display text-sm font-extrabold uppercase text-ink">Password Protected</p>
+                      <p className="text-xs text-ink-soft">Your account is secured with your password.</p>
+                    </div>
+                  </div>
+                  <Badge tone="green" dot>Secured</Badge>
+                </div>
+              )}
+
               <h2 className="mt-8 font-display text-xl font-extrabold uppercase tracking-tight">Connect your GitHub</h2>
               <p className="mt-1 text-sm text-ink-soft">
                 Required before you can claim issues — PRs and commits are matched to your claims by
@@ -549,6 +655,8 @@ export function Login() {
   const nav = useNavigate();
   const { login, logout } = useAuth();
   const [identifier, setIdentifier] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState(null);
   const [pending, setPending] = useState(false);
 
@@ -559,10 +667,11 @@ export function Login() {
     e.preventDefault();
     const id = identifier.trim();
     if (!id) return setError("Enter your roll number or email.");
+    if (!password.trim()) return setError("Enter your account password.");
     setError(null);
     setPending(true);
     try {
-      const user = await login(id);
+      const user = await login(id, password.trim());
       if (user && user.role === "student" && !user.verified) {
         logout();
         setError("Your account is not verified. You must complete ID card verification before logging into the system.");
@@ -570,7 +679,7 @@ export function Login() {
       }
       nav(from && from.startsWith("/dashboard") ? from : "/dashboard");
     } catch (err) {
-      const msg = err?.detail || err?.message || "No account found for that roll number or email.";
+      const msg = err?.detail || err?.message || "Invalid roll number or password.";
       setError(msg);
     } finally {
       setPending(false);
@@ -593,11 +702,11 @@ export function Login() {
 
           <h1 className="mt-6 font-display text-3xl font-extrabold uppercase leading-none tracking-tight">Log in</h1>
           <p className="mt-2 text-sm text-ink-soft">
-            Roll number or email in, JWT out. No passwords in this app — ever.
+            Enter your PSIT roll number and password to access your dashboard.
           </p>
 
           <form onSubmit={submit} className="mt-6 space-y-4">
-            <Field label="Roll number or email" error={error}>
+            <Field label="Roll number or email">
               <Input
                 value={identifier}
                 onChange={(e) => setIdentifier(e.target.value)}
@@ -606,8 +715,30 @@ export function Login() {
                 autoFocus
               />
             </Field>
+
+            <Field label="Password">
+              <div className="relative">
+                <Input
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="font-mono pr-14"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono font-bold uppercase text-ink-soft hover:text-ink"
+                >
+                  {showPassword ? "Hide" : "Show"}
+                </button>
+              </div>
+            </Field>
+
+            {error && <p className="font-mono text-xs font-bold text-gred">▲ {error}</p>}
+
             <Button type="submit" variant="blue" size="lg" loading={pending} className="w-full">
-              Continue →
+              Log in →
             </Button>
           </form>
 

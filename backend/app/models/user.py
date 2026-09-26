@@ -54,6 +54,7 @@ class User(Base):
 
     github_username = Column(String(100), unique=True, index=True, nullable=True)
     github_id = Column(String(100), unique=True, nullable=True)
+    password_hash = Column(String(255), nullable=True)
     role = Column(
         Enum(UserRole, values_callable=lambda x: [e.value for e in x], name="userrole"),
         default=UserRole.STUDENT,
@@ -61,6 +62,10 @@ class User(Base):
     )
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+
+    @property
+    def has_password(self) -> bool:
+        return bool(self.password_hash)
 
     @hybrid_property
     def erp_verified(self):

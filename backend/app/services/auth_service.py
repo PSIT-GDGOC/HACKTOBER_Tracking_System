@@ -20,8 +20,10 @@ Verification flow (end-to-end):
 """
 import base64
 import difflib
+import hashlib
 import io
 import logging
+import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple, Dict, Any, List
@@ -146,8 +148,56 @@ def register_student(db: Session, name: str, email: str, psit_roll_no: str) -> U
     return new_user
 
 
-def authenticate_user(db: Session, identifier: str) -> User:
-    """Find user by roll number or email."""
+def hash_password(password: str) -> str:
+    """Hash password using PBKDF2-HMAC-SHA256 with 16-byte random salt and 100,000 iterations."""
+    salt = secrets.token_hex(16)
+    key = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), bytes.fromhex(salt), 100_000)
+    return f"{salt}:{key.hex()}"
+
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+    """Verify password against stored salt:hash string."""
+    try:
+        salt, stored_hash = hashed_password.split(":")
+        key = hashlib.pbkdf2_hmac("sha256", plain_password.encode("utf-8"), bytes.fromhex(salt), 100_000)
+        return secrets.compare_digest(key.hex(), stored_hash)
+    except Exception:
+        return False
+
+
+def validate_password_strength(password: str) -> None:
+    """Validate that password meets security requirements (min 8 chars, at least 1 letter & 1 digit/symbol)."""
+    if len(password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must be at least 8 characters long."
+        )
+    if len(password) > 128:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must not exceed 128 characters."
+        )
+    has_letter = any(c.isalpha() for c in password)
+    has_non_letter = any(not c.isalpha() for c in password)
+    if not (has_letter and has_non_letter):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must contain at least one letter and one number or special character."
+        )
+
+
+def set_user_password(db: Session, user: User, password: str) -> User:
+    """Set or update user's account password."""
+    validate_password_strength(password)
+    user.password_hash = hash_password(password)
+    db.commit()
+    db.refresh(user)
+    logger.info("Password set successfully for user %s (id=%s).", user.psit_roll_no, user.id)
+    return user
+
+
+def authenticate_user(db: Session, identifier: str, password: Optional[str] = None) -> User:
+    """Find user by roll number or email and verify password if set."""
     clean_id = identifier.strip()
     user = (
         db.query(User)
@@ -161,6 +211,15 @@ def authenticate_user(db: Session, identifier: str) -> User:
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"No account found matching identifier '{identifier}'."
         )
+
+    # If the user has a password configured, strictly verify it
+    if user.password_hash:
+        if not password or not verify_password(password, user.password_hash):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid roll number or password."
+            )
+
     return user
 
 

@@ -31,6 +31,7 @@ class UserProfileResponse(BaseModel):
     github_username: Optional[str] = None
     github_id: Optional[str] = None
     role: UserRole
+    has_password: bool = False
     created_at: datetime
     updated_at: datetime
 

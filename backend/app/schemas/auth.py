@@ -45,6 +45,16 @@ class SignupResponse(BaseModel):
 
 class LoginRequest(BaseModel):
     identifier: str = Field(..., description="PSIT roll number or email address")
+    password: Optional[str] = Field(None, description="Account password")
+
+
+class SetPasswordRequest(BaseModel):
+    password: str = Field(..., min_length=8, max_length=128, description="New strong password (min 8 characters)")
+
+
+class SetPasswordResponse(BaseModel):
+    success: bool = True
+    message: str = "Password set successfully."
 
 
 class TokenResponse(BaseModel):

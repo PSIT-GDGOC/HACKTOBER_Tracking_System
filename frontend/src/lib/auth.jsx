@@ -41,8 +41,8 @@ export function AuthProvider({ children }) {
     };
   }, []);
 
-  const login = useCallback(async (identifier) => {
-    const session = await api.login({ identifier });
+  const login = useCallback(async (identifier, password) => {
+    const session = await api.login({ identifier, password: password || undefined });
     tokenStore.set(session.access_token, session.expires_in);
     setUser(session.user);
     return session.user;

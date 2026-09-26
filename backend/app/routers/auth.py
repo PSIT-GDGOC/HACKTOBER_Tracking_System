@@ -28,6 +28,8 @@ from app.schemas.auth import (
     LoginRequest,
     ManualReviewActionRequest,
     ManualReviewItemResponse,
+    SetPasswordRequest,
+    SetPasswordResponse,
     SignupRequest,
     SignupResponse,
     TokenResponse,
@@ -44,6 +46,7 @@ from app.services.auth_service import (
     process_id_card_verification,
     register_student,
     review_manual_verification,
+    set_user_password,
 )
 
 router = APIRouter(prefix="/auth", tags=["Auth & Verification"])
@@ -88,9 +91,9 @@ def login(
     """
     Authenticate student, maintainer, or admin.
     Issues a cryptographically signed JWT scoped by user ID and role.
-    Unverified students can still log in but cannot claim issues.
+    If the account has a password set, password verification is strictly enforced.
     """
-    user = authenticate_user(db=db, identifier=payload.identifier)
+    user = authenticate_user(db=db, identifier=payload.identifier, password=payload.password)
 
     token_data = {
         "sub": str(user.id),
@@ -105,6 +108,23 @@ def login(
         token_type="bearer",
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         user=UserProfileResponse.model_validate(user),
+    )
+
+
+@router.post("/set-password", response_model=SetPasswordResponse, summary="Set account password after verification")
+def set_password(
+    payload: SetPasswordRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Set a strong password for the authenticated student account.
+    Requires an active authenticated session (JWT).
+    """
+    set_user_password(db=db, user=current_user, password=payload.password)
+    return SetPasswordResponse(
+        success=True,
+        message="Password set successfully. You can now use this password to log in."
     )
 
 
