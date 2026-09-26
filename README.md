@@ -211,7 +211,8 @@ HACKTOBER_Tracking_System/
 |---|---|---|
 | **Node.js** | `18+` | Frontend package execution and runtime |
 | **Python** | `3.12+` | Backend API and worker runtime |
-| **PostgreSQL** | `14+` (or Supabase) | Primary relational database |
+| **PostgreSQL** | `14+` (or Supabase) | Primary relational database (port 6543 pooler) |
+| **libzbar0** | system library | Required by pyzbar for QR decoding (`apt-get install libzbar0` on Linux) |
 | **Git** | latest | Version control |
 
 ---
@@ -290,14 +291,13 @@ ENV=production
 DEBUG=False
 
 # ---- DATABASE (Supabase) ------------------------------------
-# Copy the "Connection string" from Supabase > Project Settings > Database
-# Use the "URI" format. Both postgres:// and postgresql:// are supported.
-DATABASE_URL=postgresql://postgres:[YOUR-PASSWORD]@db.[YOUR-PROJECT-REF].supabase.co:5432/postgres
+# Use the Supabase Transaction Pooler connection string on port 6543
+# (Direct connection on port 5432 is often blocked by Windows firewalls / ISPs).
+DATABASE_URL=postgresql://postgres.[YOUR-PROJECT-REF]:[YOUR-PASSWORD]@aws-0-[REGION].pooler.supabase.com:6543/postgres
 
 # ---- CELERY (uses same Supabase DB as broker) ---------------
-# sqla+postgresql:// prefix tells Celery to use SQLAlchemy transport (no Redis needed)
-CELERY_BROKER_URL=sqla+postgresql://postgres:[YOUR-PASSWORD]@db.[YOUR-PROJECT-REF].supabase.co:5432/postgres
-CELERY_RESULT_BACKEND=db+postgresql://postgres:[YOUR-PASSWORD]@db.[YOUR-PROJECT-REF].supabase.co:5432/postgres
+CELERY_BROKER_URL=sqla+postgresql://postgres.[YOUR-PROJECT-REF]:[YOUR-PASSWORD]@aws-0-[REGION].pooler.supabase.com:6543/postgres
+CELERY_RESULT_BACKEND=db+postgresql://postgres.[YOUR-PROJECT-REF]:[YOUR-PASSWORD]@aws-0-[REGION].pooler.supabase.com:6543/postgres
 
 # ---- SECURITY -----------------------------------------------
 # Generate with: python -c "import secrets; print(secrets.token_hex(32))"
@@ -308,20 +308,16 @@ ACCESS_TOKEN_EXPIRE_MINUTES=1440
 # ---- GITHUB -------------------------------------------------
 # Create a GitHub Personal Access Token with repo:read scope
 GITHUB_ACCESS_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx
-# Set this in your GitHub repo webhook settings > Secret
 GITHUB_WEBHOOK_SECRET=your_webhook_secret_here
-# Full GitHub repo URLs (used for issue sync)
-GITHUB_WEB_REPO_URL=https://github.com/YOUR_ORG/web-repo
-GITHUB_ANDROID_REPO_URL=https://github.com/YOUR_ORG/android-repo
+# Official event repository target for issue sync
+GITHUB_WEB_REPO_URL=https://github.com/PSIT-GDGOC/HACKTOBER_Tracking_System
 
-# ---- PSIT ERP (Aditya's integration) -----------------------
-ERP_API_URL=
-ERP_API_KEY=
+# ---- PSIT PORTAL INTEGRATION --------------------------------
+PSIT_PORTAL_BASE_URL=https://www.psit.ac.in/op
 
 # ---- CORS ---------------------------------------------------
 # Comma-separated list of allowed frontend origins.
-# Use * only during development. Set real URLs in production.
-ALLOWED_ORIGINS=https://your-frontend.vercel.app,https://your-custom-domain.com
+ALLOWED_ORIGINS=https://your-frontend.vercel.app,http://localhost:5173
 
 # ---- EVENT RULES --------------------------------------------
 MAX_ACTIVE_CLAIMS_PER_STUDENT=2
@@ -404,6 +400,22 @@ MAX_ACTIVE_CLAIMS_PER_STUDENT=2
 | `GET` | `/webhooks/jobs` | ✅ | List queued and completed webhook jobs |
 
 *Full interactive documentation and testing is available at `/docs` (Swagger UI) when the backend is running.*
+
+---
+
+### 🏷️ GitHub Issue Labeling & Auto-Classification
+
+The platform automatically classifies and awards points to issues synced from GitHub based on their labels:
+
+| Label Pattern | Assigned Points | Difficulty | Usage / Guidance |
+|---|:---:|:---:|---|
+| `easy`, `good first issue`, `beginner-friendly` | **+20 pts** | Easy | Introductory tasks, documentation, minor bugfixes |
+| `medium` | **+40 pts** | Medium | Feature additions, component logic, refactoring |
+| `hard` | **+80 pts** | Hard | Architecture overhaul, database optimization, complex integrations |
+
+* **Category detection:** Labels such as `frontend`, `backend`, `android`, `ui/ux`, `bug`, and `feature` are automatically assigned.
+* **Technology tags:** Labels such as `react`, `tailwind`, `python`, `fastapi`, `kotlin`, `docker`, and `postgresql` populate the filterable tags in Issue Explorer.
+* **Syncing:** Admins can trigger on-demand sync via `POST /issues/sync`, or let real-time GitHub Webhooks ingest new issues automatically.
 
 ---
 
