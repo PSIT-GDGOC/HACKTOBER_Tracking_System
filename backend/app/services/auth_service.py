@@ -283,125 +283,74 @@ async def process_id_card_verification(
 
     # Store the decoded QR token (private — stripped from public API responses)
     user.qr_token = qr_token
-
-    # ── Step 3b: Direct roll number match in QR ───────────────────────
     clean_user_roll = user.psit_roll_no.strip().upper()
-    if clean_user_roll in qr_token.strip().upper():
-        # Check uniqueness against other VERIFIED accounts
-        dup = (
-            db.query(User)
-            .filter(
-                User.psit_roll_no.ilike(clean_user_roll),
-                User.verified == True,
-                User.id != user.id,
-            )
-            .first()
-        )
-        if dup:
-            logger.warning(
-                "Roll number '%s' is already verified under another account (id=%s).",
-                clean_user_roll, dup.id
-            )
-            _commit_pending(db, user, f"Roll number '{clean_user_roll}' is already verified under another account.")
-            return False, "duplicate_verified_roll", (
-                f"This roll number '{clean_user_roll}' is already verified under another account. "
-                "Each PSIT student roll number can only be verified once."
-            ), qr_token
 
-        user.verified = True
-        user.verification_method = VerificationMethod.QR_AUTO
-        user.verified_at = datetime.now(timezone.utc)
-        db.commit()
-        db.refresh(user)
-        logger.info("User %s auto-verified via student roll number in QR code (%s).", user.psit_roll_no, qr_token)
-        return True, "auto_verified", (
-            "Your PSIT ID card was verified successfully. "
-            "You can now link your GitHub account and start claiming issues."
+    # ── Guard: Roll number uniqueness check against verified accounts ───
+    dup = (
+        db.query(User)
+        .filter(
+            User.psit_roll_no.ilike(clean_user_roll),
+            User.verified == True,
+            User.id != user.id,
+        )
+        .first()
+    )
+    if dup:
+        logger.warning(
+            "Roll number '%s' is already verified under another account (id=%s).",
+            clean_user_roll, dup.id
+        )
+        _commit_pending(db, user, f"Roll number '{clean_user_roll}' is already verified under another account.")
+        return False, "duplicate_verified_roll", (
+            f"This roll number '{clean_user_roll}' is already verified under another account. "
+            "Each PSIT student roll number can only be verified once."
         ), qr_token
 
-    # ── Step 4: Fetch student data from PSIT portal ───────────────────
+    # ── Step 4: Optional PSIT portal lookup for snapshot ──────────────
     portal_data: Optional[Dict[str, Any]] = None
     try:
         portal_data = await fetch_psit_student_data(qr_token)
     except Exception as exc:
-        logger.error("Unexpected error fetching PSIT portal data for token %s: %s", qr_token, exc)
+        logger.debug("PSIT portal lookup error for token %s: %s", qr_token, exc)
 
-    if portal_data is None:
-        logger.info(
-            "PSIT portal returned no data for token %s (user %s). Routing to manual review.",
-            qr_token, user.psit_roll_no
-        )
-        _commit_pending(db, user, "PSIT portal did not return usable student data.")
-        return False, "portal_unavailable", (
-            "Your QR code was successfully read, but our system could not retrieve your "
-            "details from the PSIT portal right now. Your account has been added to the "
-            "admin manual review queue. Expected turnaround: under 24 hours."
-        ), qr_token
+    if portal_data:
+        user.portal_snapshot_json = portal_data.get("_raw", portal_data)
+        portal_roll = portal_data.get("roll_no", "").strip().upper()
+        portal_name = portal_data.get("student_name", "").strip()
 
-    # Store portal snapshot (private; never exposed in public API responses)
-    user.portal_snapshot_json = portal_data.get("_raw", portal_data)
+        roll_matched = (portal_roll == clean_user_roll) if portal_roll else True
+        name_matched = _fuzzy_name_match(user.name, portal_name) if portal_name else True
 
-    # ── Step 5: Cross-check roll number & name ────────────────────────
-    portal_roll = portal_data.get("roll_no", "").strip().upper()
-    portal_name = portal_data.get("student_name", "").strip()
-
-    roll_matched = portal_roll == user.psit_roll_no.strip().upper()
-    name_matched = _fuzzy_name_match(user.name, portal_name) if portal_name else False
-
-    if roll_matched and name_matched:
-        # Check uniqueness against other VERIFIED accounts
-        dup = (
-            db.query(User)
-            .filter(
-                User.psit_roll_no.ilike(clean_user_roll),
-                User.verified == True,
-                User.id != user.id,
-            )
-            .first()
-        )
-        if dup:
-            logger.warning(
-                "Roll number '%s' is already verified under another account (id=%s).",
-                clean_user_roll, dup.id
-            )
-            _commit_pending(db, user, f"Roll number '{clean_user_roll}' is already verified under another account.")
-            return False, "duplicate_verified_roll", (
-                f"This roll number '{clean_user_roll}' is already verified under another account. "
-                "Each PSIT student roll number can only be verified once."
+        if not roll_matched or not name_matched:
+            mismatch_detail = []
+            if not roll_matched:
+                mismatch_detail.append(
+                    f"Roll number mismatch: registered '{clean_user_roll}', card belongs to '{portal_roll}'."
+                )
+            if not name_matched:
+                mismatch_detail.append(
+                    f"Name mismatch: registered '{user.name}', card belongs to '{portal_name}'."
+                )
+            detail_str = " ".join(mismatch_detail)
+            _commit_pending(db, user, detail_str)
+            return False, "pending_review", (
+                "Your ID card was scanned but the details on the card don't match "
+                "what you registered with. Your account has been added to the admin manual "
+                "review queue. Expected turnaround: under 24 hours."
             ), qr_token
 
-        # ── Auto-verified ─────────────────────────────────────────────
-        user.verified = True
-        user.verification_method = VerificationMethod.QR_AUTO
-        user.verified_at = datetime.now(timezone.utc)
-        db.commit()
-        db.refresh(user)
-        logger.info("User %s auto-verified via PSIT portal QR check.", user.psit_roll_no)
-        return True, "auto_verified", (
-            "Your PSIT ID card was verified successfully. "
-            "You can now link your GitHub account and start claiming issues."
-        ), qr_token
-    else:
-        # ── Mismatch → manual review ──────────────────────────────────
-        mismatch_detail = []
-        if not roll_matched:
-            mismatch_detail.append(
-                f"Roll number mismatch: registered '{user.psit_roll_no}', portal returned '{portal_roll}'."
-            )
-        if not name_matched:
-            mismatch_detail.append(
-                f"Name mismatch: registered '{user.name}', portal returned '{portal_name}'."
-            )
-        detail_str = " ".join(mismatch_detail)
-        logger.info(
-            "User %s routed to manual review. %s", user.psit_roll_no, detail_str
-        )
-        _commit_pending(db, user, detail_str)
-        return False, "pending_review", (
-            "Your ID card was scanned but the details on the card don't exactly match "
-            "what you registered with. Your account has been added to the admin manual "
-            "review queue. Expected turnaround: under 24 hours."
-        ), qr_token
+    # ── Step 5: Auto-verify on Valid PSIT ID Card QR Code ──────────────
+    # A valid PSIT card-preview QR token proves physical possession of an authentic PSIT ID card.
+    user.verified = True
+    user.verification_method = VerificationMethod.QR_AUTO
+    user.verified_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(user)
+    logger.info("User %s auto-verified via valid PSIT ID card QR token (%s).", user.psit_roll_no, qr_token)
+    return True, "auto_verified", (
+        "Your PSIT ID card QR code was verified successfully! "
+        "You can now link your GitHub account and start claiming issues."
+    ), qr_token
 
 
 def _commit_pending(db: Session, user: User, reason: str) -> None:
