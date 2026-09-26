@@ -335,69 +335,69 @@ MAX_ACTIVE_CLAIMS_PER_STUDENT=2
 
 ## 🔌 API Reference
 
-### Auth & Verification (`/auth`)
+### 🔐 Auth, Security & Verification (`/auth`) — *Lead: Aditya (All Endpoints Complete)*
 
-| Method | Endpoint | Auth | Description |
-|---|---|:---:|---|
-| `POST` | `/auth/signup` | — | Register with roll number + name + email (deferred uniqueness check) |
-| `POST` | `/auth/login` | — | Authenticate with roll number / email + password, returns JWT |
-| `POST` | `/auth/set-password` | ✅ | Set strong account password (min 8 chars, alphanumeric) |
-| `GET` | `/auth/me` | ✅ | Fetch current authenticated user session |
-| `POST` | `/auth/verify-id` | ✅ | Upload ID card for OpenCV QR decode + 1-card uniqueness check |
-| `GET` | `/auth/pending-verifications` | ✅ (Admin) | Queue for fallback manual reviews |
-| `POST` | `/auth/verify-manual/{id}` | ✅ (Admin) | Manual approve / reject decision |
-| `GET` | `/auth/github/login` | — | Retrieve GitHub OAuth redirect URL |
-| `POST` | `/auth/github/callback` | ✅ | GitHub OAuth callback: exchange code & link identity |
-| `POST` | `/auth/github/link` | ✅ | Manually link GitHub username (validated against GitHub API) |
+| Method | Endpoint | Auth | Status | Description |
+|---|---|:---:|:---:|---|
+| `POST` | `/auth/signup` | — | `✅ Complete` | Register with roll number + name + email (deferred uniqueness check) |
+| `POST` | `/auth/login` | — | `✅ Complete` | Authenticate with roll number / email + password, returns signed JWT |
+| `POST` | `/auth/set-password` | ✅ | `✅ Complete` | Set strong account password (min 8 chars, alphanumeric) |
+| `GET` | `/auth/me` | ✅ | `✅ Complete` | Fetch current authenticated user session |
+| `POST` | `/auth/verify-id` | ✅ | `✅ Complete` | Upload ID card for OpenCV QR decode + 1-card uniqueness check |
+| `GET` | `/auth/pending-verifications` | ✅ (Admin) | `✅ Complete` | Queue for fallback manual reviews |
+| `POST` | `/auth/verify-manual/{id}` | ✅ (Admin) | `✅ Complete` | Manual approve / reject decision |
+| `GET` | `/auth/github/login` | — | `✅ Complete` | Retrieve GitHub OAuth redirect URL |
+| `POST` | `/auth/github/callback` | ✅ | `✅ Complete` | GitHub OAuth callback: exchange code & link identity |
+| `POST` | `/auth/github/link` | ✅ | `✅ Complete` | Manually link GitHub username (live API existence validation) |
 
-### Issues & Claims (`/issues`)
+### 📌 Issues & Claims (`/issues`)
 
-| Method | Endpoint | Auth | Description |
-|---|---|:---:|---|
-| `GET` | `/issues` | ✅ | Filterable list (repo, difficulty, tech, status) |
-| `GET` | `/issues/{issue_id}` | ✅ | Issue detail and claim state |
-| `POST` | `/issues/{issue_id}/claim` | ✅ | Atomic claim with PostgreSQL row lock |
-| `POST` | `/issues/{issue_id}/unclaim` | ✅ | Release an active claim |
-| `POST` | `/issues/sync` | ✅ | Trigger on-demand sync from GitHub repositories |
+| Method | Endpoint | Auth | Status | Description |
+|---|---|:---:|:---:|---|
+| `GET` | `/issues` | ✅ | `✅ Complete` | Filterable list (repo, difficulty, tech, status) |
+| `GET` | `/issues/{issue_id}` | ✅ | `✅ Complete` | Issue detail and claim state |
+| `POST` | `/issues/{issue_id}/claim` | ✅ | `✅ Complete` | Atomic claim with PostgreSQL row lock |
+| `POST` | `/issues/{issue_id}/unclaim` | ✅ | `✅ Complete` | Release an active claim |
+| `POST` | `/issues/sync` | ✅ | `✅ Complete` | Trigger on-demand sync from GitHub repositories |
 
-### Pull Requests & Commits (`/pull-requests`, `/commits`)
+### 🔀 Pull Requests & Commits (`/pull-requests`, `/commits`)
 
-| Method | Endpoint | Auth | Description |
-|---|---|:---:|---|
-| `GET` | `/pull-requests` | ✅ | List pull requests with status and contributor filters |
-| `GET` | `/pull-requests/{pr_id}` | ✅ | Individual pull request details |
-| `GET` | `/commits` | ✅ | Feed of tracked commits across event repositories |
+| Method | Endpoint | Auth | Status | Description |
+|---|---|:---:|:---:|---|
+| `GET` | `/pull-requests` | ✅ | `✅ Complete` | List pull requests with status and contributor filters |
+| `GET` | `/pull-requests/{pr_id}` | ✅ | `✅ Complete` | Individual pull request details |
+| `GET` | `/commits` | ✅ | `✅ Complete` | Feed of tracked commits across event repositories |
 
-### Contributions & Moderation (`/contributions`)
+### 🏅 Contributions & Moderation (`/contributions`)
 
-| Method | Endpoint | Auth | Description |
-|---|---|:---:|---|
-| `GET` | `/contributions` | ✅ | List contributions with moderation status filters |
-| `GET` | `/contributions/my` | ✅ | Current user's contribution timeline |
-| `GET` | `/contributions/{user_id}` | ✅ | Public contributor timeline for a specific student |
-| `PATCH` | `/contributions/{id}/validation` | ✅ | Maintainer review: mark valid / duplicate / rejected |
-| `PATCH` | `/contributions/{id}/status` | ✅ | Transition contribution state |
+| Method | Endpoint | Auth | Status | Description |
+|---|---|:---:|:---:|---|
+| `GET` | `/contributions` | ✅ | `✅ Complete` | List contributions with moderation status filters |
+| `GET` | `/contributions/my` | ✅ | `✅ Complete` | Current user's contribution timeline |
+| `GET` | `/contributions/{user_id}` | ✅ | `✅ Complete` | Public contributor timeline for a specific student |
+| `PATCH` | `/contributions/{id}/validation` | ✅ | `✅ Complete` | Maintainer review: mark valid / duplicate / rejected |
+| `PATCH` | `/contributions/{id}/status` | ✅ | `✅ Complete` | Transition contribution state |
 
-### Dashboards & Engagement
+### 📊 Dashboards & Engagement
 
-| Method | Endpoint | Auth | Description |
-|---|---|:---:|---|
-| `GET` | `/dashboard/student` | ✅ | Student metrics (active claims, PR summary, progress) |
-| `GET` | `/dashboard/maintainer` | ✅ | Maintainer review queue and pending validations |
-| `GET` | `/dashboard/repository/{id}` | ✅ | Repository health, stars, open issues, merge rates |
-| `GET` | `/dashboard/admin` | ✅ | Overall event metrics and verification backlog |
-| `GET` | `/leaderboard` | — | Ranked leaderboard sorted by weighted points |
-| `GET` | `/notifications` | ✅ | User notification feed and review alerts |
-| `GET` | `/activity` | — | Global activity stream across all repositories |
-| `GET` | `/search?q=` | ✅ | Unified search across issues, users, and repositories |
+| Method | Endpoint | Auth | Status | Description |
+|---|---|:---:|:---:|---|
+| `GET` | `/dashboard/student` | ✅ | `✅ Complete` | Student metrics (active claims, PR summary, progress) |
+| `GET` | `/dashboard/maintainer` | ✅ | `✅ Complete` | Maintainer review queue and pending validations |
+| `GET` | `/dashboard/repository/{id}` | ✅ | `✅ Complete` | Repository health, stars, open issues, merge rates |
+| `GET` | `/dashboard/admin` | ✅ | `✅ Complete` | Overall event metrics and verification backlog |
+| `GET` | `/leaderboard` | — | `✅ Complete` | Ranked leaderboard sorted by weighted points |
+| `GET` | `/notifications` | ✅ | `✅ Complete` | User notification feed and review alerts |
+| `GET` | `/activity` | — | `✅ Complete` | Global activity stream across all repositories |
+| `GET` | `/search?q=` | ✅ | `✅ Complete` | Unified search across issues, users, and repositories |
 
-### Webhooks (`/webhooks`)
+### ⚡ Webhooks (`/webhooks`)
 
-| Method | Endpoint | Auth | Description |
-|---|---|:---:|---|
-| `POST` | `/webhooks/github` | HMAC | Ingests verified GitHub webhook events |
-| `POST` | `/webhooks/jobs/drain` | ✅ | Drain due webhook jobs (pg_cron sweep) |
-| `GET` | `/webhooks/jobs` | ✅ | List queued and completed webhook jobs |
+| Method | Endpoint | Auth | Status | Description |
+|---|---|:---:|:---:|---|
+| `POST` | `/webhooks/github` | HMAC | `✅ Complete` | Ingests verified GitHub webhook events |
+| `POST` | `/webhooks/jobs/drain` | ✅ | `✅ Complete` | Drain due webhook jobs (pg_cron sweep) |
+| `GET` | `/webhooks/jobs` | ✅ | `✅ Complete` | List queued and completed webhook jobs |
 
 *Full interactive documentation and testing is available at `/docs` (Swagger UI) when the backend is running.*
 
@@ -449,7 +449,15 @@ The platform automatically classifies and awards points to issues synced from Gi
     </td>
     <td align="center" width="33%">
       <b>Aditya</b><br/>
-      <sub>Auth, QR CV verification, password security, infra</sub>
+      <sub><b>Auth, Security &amp; Verification Lead</b></sub><br/>
+      <small>
+        ✅ 4-Step Student Verification Pipeline<br/>
+        ✅ OpenCV + pyzbar 5-Stage QR CV Scanner<br/>
+        ✅ Anti-Spoofing 1-Card Uniqueness Guard<br/>
+        ✅ PBKDF2-HMAC-SHA256 Password Security<br/>
+        ✅ GitHub API User Validation &amp; OAuth<br/>
+        ✅ Supabase PostgreSQL Infrastructure
+      </small>
     </td>
   </tr>
 </table>
