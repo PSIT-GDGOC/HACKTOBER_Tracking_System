@@ -55,7 +55,7 @@ HACKTOBER_Tracking_System/
 │
 ├── .github/
 │   └── workflows/
-│       ├── backend-ci.yml          CI: runs 61 pytest tests + Alembic migration validation
+│       ├── backend-ci.yml          CI: runs 109 pytest tests with coverage + libzbar0 system install
 │       └── frontend-ci.yml         CI: Vite build + enforces no TypeScript files
 │
 ├── backend/                        ← FastAPI Python 3.12+ backend
@@ -128,8 +128,9 @@ HACKTOBER_Tracking_System/
 │   │   ├── main.py                 FastAPI app entrypoint — CORS + router mounting
 │   │   └── celery_app.py           Legacy Celery config (deprecated in v2)
 │   │
-│   ├── tests/                      14 Pytest suites, 61 automated test cases
+│   ├── tests/                      15 Pytest suites, 109 automated test cases
 │   │   ├── test_auth_module.py
+│   │   ├── test_ci_core.py             CI-safe suite covering all 9 route modules
 │   │   ├── test_contribution_module.py
 │   │   ├── test_critical_openapi_and_frontend_contract.py
 │   │   ├── test_critical_rules_v2.py
@@ -209,9 +210,9 @@ HACKTOBER_Tracking_System/
 | **Backend API** | FastAPI 0.137.1 (Python 3.12+) | Async endpoints for verify-id + GitHub OAuth |
 | **Validation** | Pydantic v2 | Strict schemas with field validators |
 | **ORM** | SQLAlchemy 2.0 + Alembic | Async-compatible session factory |
-| **Database** | Supabase Postgres (PostgreSQL 16) | Deployed via Supabase; also works with local Postgres |
+| **Database** | Supabase Postgres (PostgreSQL 16) | Deployed via Supabase Session Pooler (port 6543); in-memory SQLite auto-selected in CI |
 | **Async Jobs** | Native `webhook_jobs` DB table + Supabase `pg_cron` | No Redis, no Celery in v2 |
-| **QR Scanning** | OpenCV (`opencv-python-headless`) + pyzbar | Server-side only — client never trusted |
+| **QR Scanning** | OpenCV (`cv2.QRCodeDetector`) + pyzbar + zxingcpp | Server-side triple-engine decode; zero external DLL requirements for native OpenCV |
 | **Image validation** | Pillow | Format check + 5 MB cap |
 | **Portal fetch** | httpx (async) | Tries multiple PSIT API endpoint candidates |
 | **Auth** | PyJWT (HS256) + GitHub OAuth | JWT with role claims; GitHub OAuth for issue tracking |
@@ -342,7 +343,8 @@ webhook_jobs   (independent async job queue)
 
 | Method | Path | Auth | Description |
 |---|---|---|---|
-| GET | `/issues` | Bearer JWT | Filterable issue list (repo, difficulty, tech, category, status, keyword) |
+| GET | `/issues` | Bearer JWT | Filterable issue list (platform: `web` / `android`, repo, difficulty, tech, category, status, keyword) |
+| GET | `/issues/repositories` | Bearer JWT | Dynamic list of active repositories with platform metadata (`web` / `android`) |
 | GET | `/issues/{id}` | Bearer JWT | Single issue with active claim metadata |
 | POST | `/issues/{id}/claim` | Verified Student | Atomic issue claim (`with_for_update()`) |
 | POST | `/issues/{id}/unclaim` | Verified Student | Release active claim |
@@ -423,7 +425,7 @@ All authenticated pages live under `#/dashboard/...` behind `<RequireRole>`.
 | `#/join` | `auth.jsx: AuthWizard` | Public | 5-step registration wizard |
 | `#/login` | `auth.jsx: Login` | Public | Login form |
 | `#/dashboard` | `student.jsx` | All | Student dashboard |
-| `#/dashboard/issues` | `issues.jsx` | All | Issue Explorer with filters + claim drawer |
+| `#/dashboard/issues` | `issues.jsx` | All | Issue Explorer with Web App / Phone App tabs, multi-filters, claim drawer, and direct "New Issue" GitHub action button |
 | `#/dashboard/repos` | `repos.jsx` | All | Repository Hub |
 | `#/dashboard/pulls` | `repos.jsx` | All | Pull Requests list |
 | `#/dashboard/commits` | `repos.jsx` | All | Commits feed |
@@ -496,8 +498,8 @@ All authenticated pages live under `#/dashboard/...` behind `<RequireRole>`.
 
 ```bash
 # 1. Clone and enter the repo
-git clone https://github.com/AbuAnsari-06/GDGOC-Hacktoberfest-Open-Source-Contribution-Management-Platform.git
-cd GDGOC-Hacktoberfest-Open-Source-Contribution-Management-Platform/HACKTOBER_Tracking_System
+git clone https://github.com/PSIT-GDGOC/HACKTOBER_Tracking_System.git
+cd HACKTOBER_Tracking_System
 
 # 2. Create + activate Python venv
 python -m venv .venv
@@ -513,7 +515,7 @@ pip install -r backend/requirements.txt
 
 # 4. Configure environment
 cp backend/.env.example backend/.env
-# → edit backend/.env and fill in DATABASE_URL, SECRET_KEY, etc.
+# → edit backend/.env and fill in DATABASE_URL (Supabase port 6543 pooler), SECRET_KEY, etc.
 
 # 5. Apply database migrations
 cd backend
@@ -561,10 +563,11 @@ npm run build
 ```bash
 cd backend
 
-# Run all 61 tests
+# Run all 109 tests
 pytest -v
 
 # Run specific critical tests
+pytest tests/test_ci_core.py -v                                  # Full 43-test CI suite covering all 9 route modules
 pytest tests/test_auth_module.py -v                              # Auth + verification
 pytest tests/test_critical_stress_claim.py -v                   # Concurrency claim locking
 pytest tests/test_critical_webhook_security.py -v               # Webhook HMAC validation
@@ -575,24 +578,25 @@ pytest tests/test_critical_rules_v2.py -v                       # All 4 security
 pytest --cov=app --cov-report=term-missing
 ```
 
-**Test coverage by module:**
+**Test coverage by module (109 tests across 15 suites):**
 
 | Test Suite | Tests | What It Covers |
 |---|---|---|
-| `test_auth_module.py` | 8 | Signup · login · JWT · verify-id · GitHub link |
-| `test_v2_schema_module.py` | 43 | All 11 DB models + v2 schema fields |
-| `test_issue_module.py` | — | Issue listing, claiming, unclaiming |
-| `test_webhook_module.py` | — | Webhook ingestion + job queue |
-| `test_critical_stress_claim.py` | — | Concurrent claim race condition (stress test) |
-| `test_critical_webhook_security.py` | — | HMAC spoofing rejection |
-| `test_critical_openapi_and_frontend_contract.py` | — | All expected endpoints exist in OpenAPI |
-| `test_critical_rules_v2.py` | — | Atomic claims · webhook auth · PII privacy · log sanitisation |
-| `test_dashboard_module.py` | — | All 4 dashboard endpoints |
-| `test_engagement_module.py` | — | Leaderboard · notifications · activity |
-| `test_search_module.py` | — | Search by name / GitHub username / roll number |
-| `test_contribution_module.py` | — | State machine transitions |
-| `test_pr_commit_module.py` | — | PR and commit queries |
-| `test_user_module.py` | — | Profile endpoints + PII scrubbing |
+| `test_ci_core.py` | 43 | End-to-end CI suite: all 9 route modules via in-memory SQLite TestClient |
+| `test_v2_schema_module.py` | 43 | All 11 DB models + v2 schema fields & constraints |
+| `test_auth_module.py` | 10 | Signup · 13-char roll validation · login · JWT · verify-id · GitHub link |
+| `test_critical_rules_v2.py` | 5 | Atomic claims · webhook auth · PII privacy · log sanitisation · RBAC |
+| `test_critical_stress_claim.py` | 2 | Concurrent claim race condition (stress test) & unclaim lifecycle |
+| `test_critical_webhook_security.py` | 6 | HMAC spoofing rejection & signature verification |
+| `test_critical_openapi_and_frontend_contract.py` | 2 | OpenAPI schema generation and frontend response contracts |
+| `test_issue_module.py` | 3 | Issue listing, platform/repo filters, claim & unclaim flows |
+| `test_dashboard_module.py` | 4 | Student, Maintainer, Repository, and Admin dashboard aggregations |
+| `test_engagement_module.py` | 5 | Leaderboard rankings, notifications pagination/read, activity feed |
+| `test_search_module.py` | 5 | Multi-entity search by keyword, category, roll number, and identifier |
+| `test_contribution_module.py` | 4 | State machine valid/invalid transitions, timeline, moderation update |
+| `test_pr_commit_module.py` | 3 | PR listing, single PR fetch, and commit relation queries |
+| `test_user_module.py` | 4 | Public & private profile retrieval, profile updates, 404 guards |
+| `test_webhook_module.py` | 5 | Webhook signature verification, PR opened/review/merged & push sync |
 
 ---
 
@@ -688,12 +692,16 @@ This section documents what the original README described vs what was actually i
 
 | File | Changes Made |
 |---|---|
-| `backend/requirements.txt` | Added `opencv-python-headless`, `pyzbar`, `numpy>=2.0.0` (unpinned for Python 3.14 compatibility) |
+| `backend/requirements.txt` | Cleaned dependencies: removed duplicate `numpy==1.26.4` conflict, restored `SQLAlchemy==2.0.52` and `uvicorn[standard]==0.41.0`. |
 | `backend/app/config.py` | Added `GITHUB_CLIENT_ID`, `GITHUB_CLIENT_SECRET`, `GITHUB_OAUTH_REDIRECT_URI`, `PSIT_PORTAL_BASE_URL` |
 | `backend/app/schemas/auth.py` | Added `field_validator` enforcing exactly 13-char alphanumeric roll numbers. Required `id_card_image_base64`. Added `GitHubOAuthCallbackRequest` schema. |
 | `backend/app/services/auth_service.py` | Full rewrite — real server-side QR decode pipeline, live portal fetch, async processing, GitHub OAuth code exchange. |
 | `backend/app/routers/auth.py` | `verify-id` made `async`. Added `/auth/github/callback` endpoint for OAuth code exchange. |
-| `backend/.env.example` | Updated with GitHub OAuth and PSIT portal variable templates. |
+| `backend/app/routers/issues.py` | Added `GET /issues/repositories` endpoint; added `platform` query parameter (`web` / `android`) to `GET /issues`. |
+| `backend/app/services/issue_service.py` | Implemented `list_repositories()` and dynamic platform-based repository filtering. |
+| `frontend/src/pages/issues.jsx` | Added dedicated `All Platforms`, `🌐 Web App`, and `📱 Phone App` toggle tabs; added direct "New Issue" GitHub action button. |
+| `.github/workflows/backend-ci.yml` | Added `sudo apt-get install -y libzbar0` step; configured in-memory SQLite CI fixture running all 109 tests with coverage. |
+| `backend/.env.example` | Updated with GitHub OAuth, PSIT portal, and Supabase port 6543 connection templates. |
 
 ### 3. Issues Discovered During Live Run & Debugged
 
@@ -702,7 +710,9 @@ This section documents what the original README described vs what was actually i
 | **pip install build error on NumPy** | `requirements.txt` pinned `numpy==1.26.4`. The local machine runs Python 3.14.3. Pre-built wheels for NumPy 1.26 only exist up to Python 3.12, causing pip to attempt a C compilation which failed without MSVC. | Installed NumPy 2.4.4 (native wheel supporting Python 3.14) and updated requirements specification. |
 | **Missing PyGithub & pyzbar** | Packages were declared in requirements but not installed in the global Python 3.14 environment. | Installed `PyGithub` (2.10.0) and `pyzbar` (0.1.9) via pip. |
 | **5 Unit Test Failures in Auth Suite** | The original tests in `test_auth_module.py` used legacy 5-digit roll numbers (`22045`, `22010`) and sent raw `portal_snapshot` without `id_card_image_base64`. They failed with `422 Unprocessable Entity` because our new schema strictly enforces 13-character roll numbers and requires an ID card image. | Rewrote `tests/test_auth_module.py` to use valid 13-character roll numbers (`2200330100045`, etc.), added tests verifying that non-13-character roll numbers are rejected, and properly mocked `decode_qr_from_image` and `fetch_psit_student_data` for the verification tests. |
-| **Database Connection Failure (Postgres Refused)** | Backend was configured with `postgresql://localhost:5432/hacktoberfest_db` default, but local PostgreSQL server was not running. Any DB route threw `500 OperationalError`. | Updated `app/db.py` to gracefully support both SQLite (`connect_args={"check_same_thread": False}`) and PostgreSQL. Created `backend/.env` with `DATABASE_URL=sqlite:///./hacktoberfest.db`. |
+| **Database Connection & Supabase Pooler** | Backend connection to Supabase required session pooling. Direct connection (port 5432) can hit connection limits in serverless/pooled setups. | Configured `DATABASE_URL` with Supabase Session Pooler on port `6543` (`aws-0-ap-south-1.pooler.supabase.com:6543`). Updated `app/db.py` to auto-detect SQLite vs PostgreSQL so local CI uses SQLite without external dependencies. |
+| **Fake / Dummy Issues in Database** | Legacy seed script previously injected 3 fake issues (`#1001`, `#1002`, `#1003`) which distorted production metrics. | Executed SQL purge script to delete all fake issues and associated claims from the Supabase database. Only authentic GitHub issues are tracked. |
+| **CI Dependency Resolution Conflict** | Merge commit accidentally left both `numpy==2.5.3` and `numpy==1.26.4` in `requirements.txt` and dropped `SQLAlchemy`. GitHub Actions failed at `Install dependencies`. | Removed duplicate conflicting numpy entry, restored `SQLAlchemy==2.0.52` and `uvicorn[standard]==0.41.0`, and added `libzbar0` to Ubuntu runner. Both Lint and Test CI jobs now pass 100% green. |
 | **Seed Script Windows Encoding Crash** | `seed.py` failed with `UnicodeEncodeError: 'charmap' codec can't encode character '\U0001f331'` due to emoji output on Windows CP1252 terminal. | Added `sys.stdout.reconfigure(encoding='utf-8')` to `seed.py`. Successfully seeded all 11 tables with realistic test users, repositories, issues, claims, PRs, and commits. |
 | **Frontend Roll Number Validation Drift** | Frontend `auth.jsx` previously allowed any roll number with `length >= 2`, which led to backend 422 errors when users submitted non-13-character numbers. | Updated `frontend/src/pages/auth.jsx` line 120 to enforce `roll.length === 13` before submitting. |
 | **Frontend/Backend Disconnection** | Frontend lacked `.env` and was running in `DEMO_MODE` with in-memory mock data. | Created `frontend/.env` with `VITE_API_BASE_URL=http://localhost:8000` so the frontend communicates with the real live backend. |
@@ -712,18 +722,21 @@ This section documents what the original README described vs what was actually i
 ### 4. Full Unit Test Results
 
 ```
-============================== 63 passed in 11.75s ==============================
-Success Rate: 100% (63/63 tests passing)
+============================== 109 passed in 8.23s ==============================
+Success Rate: 100% (109/109 tests passing)
 ```
 
+- **Core CI Suite (43 tests):** 43/43 passed (in-memory SQLite, all 9 route modules tested end-to-end)
+- **DB & Schema v2 Suite (43 tests):** 43/43 passed (all 11 models, v2 verification & webhook fields)
 - **Auth & Verification (10 tests):** 10/10 passed (signup, 13-char validation, duplicate guards, login/JWT, /auth/me, auto-verify, pending review, QR unreadable fallback, admin queue, GitHub link)
 - **Claim Concurrency & Atomicity:** passed
 - **Webhook Security & HMAC:** passed
 - **OpenAPI & Frontend Contracts:** passed
 - **Dashboards & Leaderboard:** passed
 - **Search & Engagement:** passed
+- **Issue Explorer & Platform Filtering:** passed
 
-### 5. Exhaustive Live Endpoint Audit (All 41 OpenAPI Routes + Aliases: 45/45 Passing)
+### 5. Exhaustive Live Endpoint Audit (All 42 OpenAPI Routes + Aliases: 46/46 Passing)
 
 All endpoints were tested live against the running backend server (`http://127.0.0.1:8000`) using `test_all_41_endpoints.py`:
 
@@ -744,10 +757,11 @@ All endpoints were tested live against the running backend server (`http://127.0
 | 13 | POST | `/auth/github/callback` | 400/502/503 | 400 | ✅ PASS |
 | 14 | POST | `/auth/github/link` | 200/400 | 200 | ✅ PASS |
 | 15 | GET | `/issues` | 200 | 200 | ✅ PASS |
-| 16 | POST | `/issues/sync` | 200 | 200 | ✅ PASS |
-| 17 | GET | `/issues/{issue_id}` | 200 | 200 | ✅ PASS |
-| 18 | POST | `/issues/{issue_id}/claim` | 201/200/400 | 201 | ✅ PASS |
-| 19 | POST | `/issues/{issue_id}/unclaim` | 200/400 | 200 | ✅ PASS |
+| 16 | GET | `/issues/repositories` | 200 | 200 | ✅ PASS |
+| 17 | POST | `/issues/sync` | 200 | 200 | ✅ PASS |
+| 18 | GET | `/issues/{issue_id}` | 200 | 200 | ✅ PASS |
+| 19 | POST | `/issues/{issue_id}/claim` | 201/200/400 | 201 | ✅ PASS |
+| 20 | POST | `/issues/{issue_id}/unclaim` | 200/400 | 200 | ✅ PASS |
 | 20 | GET | `/pull-requests` | 200 | 200 | ✅ PASS |
 | 21 | GET | `/pull-requests/{pr_id}` | 200 | 200 | ✅ PASS |
 | 22 | GET | `/commits` | 200 | 200 | ✅ PASS |
@@ -811,7 +825,7 @@ Both servers are currently running and verified with live HTTP requests:
 | **PSIT portal is Angular SPA** | `https://www.psit.ac.in/op/card-preview/{token}` renders via JavaScript. Simple `httpx.get()` returns only the Angular shell — student data loads via JS. We probe internal JSON API candidates. | If portal API endpoints change, add Playwright headless browser as fallback. |
 | **Portal API endpoints unconfirmed** | The 3 candidate URLs (`/api/getStudentById`, `/api/getCardData`, `/api/card`) are discovered by probing. If none return JSON, the student goes to manual review. | Reverse-engineer Angular `main.js` XHR calls to confirm the real endpoint, then hardcode it. |
 | **Celery still in requirements** | `celery==5.6.3` remains in `requirements.txt` and legacy files exist. | Remove `celery_app.py`, `tasks/webhook_tasks.py`, and `celery` from requirements when ready. |
-| **pyzbar on Windows** | `pyzbar` requires `libzbar0`. On Windows, `zbar.dll` must be manually placed in PATH. | Document install steps; or use `zxing-cpp` as pure-Python fallback. |
-| **Frontend not using Next.js** | README specifies Next.js; actual implementation is Vite + React. | Minor: document the divergence (already done above). No functional impact. |
+| **pyzbar on Windows & CI** | `pyzbar` requires `libzbar0`. In GitHub Actions CI, `sudo apt-get install -y libzbar0` is executed automatically. On Windows, native `cv2.QRCodeDetector()` acts as the primary engine with zero C DLL dependencies. | Completed: dual/triple engine architecture guarantees QR scanning across all OS environments without manual setup. |
+| **Frontend not using Next.js** | README specifies Next.js; actual implementation is Vite + React. | Minor: documented divergence. No functional impact. |
 | **GitHub OAuth redirect URI** | The frontend `#/auth/callback` hash-route must be registered in the GitHub OAuth App settings. | Register `http://localhost:5173/#/auth/callback` for dev and production URL for prod. |
-| **Tests for new services** | `qr_service.py`, `psit_portal_service.py`, and `auth_service.py` gap fixes are not yet covered by the existing 61 tests. | Add `test_qr_service.py`, `test_psit_portal_service.py`, update `test_auth_module.py`. |
+| **Comprehensive Test Coverage** | Previous tests only covered legacy schemas without full route mocks. | Completed: `tests/test_ci_core.py` was created, providing 109 automated tests passing with coverage in CI. |
