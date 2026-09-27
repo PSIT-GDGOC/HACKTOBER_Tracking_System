@@ -60,6 +60,23 @@ async def github_webhook_receiver(
 
     action = payload.get("action")
 
+    # ── Org webhook: new repository created ───────────────────────────────────
+    # When a new repo is created in the PSIT-GDGOC org, GitHub fires:
+    #   X-GitHub-Event: repository  +  action: created
+    # We instantly add it to the DB so it shows in the Repository Hub.
+    if x_github_event == "repository" and action == "created":
+        repo_data = payload.get("repository", {})
+        if repo_data:
+            from app.services.org_sync_service import sync_single_repo_from_webhook
+            new_repo = sync_single_repo_from_webhook(db=db, repo_data=repo_data)
+            return WebhookResponse(
+                status="success",
+                event=x_github_event,
+                action=action,
+                detail=f"Org repo '{repo_data.get('name')}' {'added to Repository Hub' if new_repo else 'skipped (excluded)'}",
+                data={"repo_id": new_repo.id if new_repo else None, "repo_name": repo_data.get("name")}
+            )
+
     # 3. Persist incoming webhook event with idempotency check
     job, is_new = create_webhook_job(
         db=db,

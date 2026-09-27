@@ -20,25 +20,13 @@ router = APIRouter(prefix="/issues", tags=["Issues"])
 
 @router.get("/repositories", response_model=List[RepositoryBrief], summary="List registered repositories")
 def list_repositories(db: Session = Depends(get_db)):
-    """Return all registered official repositories."""
+    """Return all registered official repositories.
+
+    Repos are auto-synced from the PSIT-GDGOC GitHub org on startup and
+    every 5 minutes in the background. This endpoint simply reads what's
+    already in the DB — no GitHub API calls at request time.
+    """
     repos = db.query(Repository).all()
-    if not repos:
-        from app.models import PlatformType
-        r1 = Repository(
-            name="hacktoberfest-web",
-            github_repo_url="https://github.com/PSIT-GDGOC/hacktoberfest-web",
-            platform=PlatformType.WEB,
-        )
-        r2 = Repository(
-            name="hacktoberfest-android",
-            github_repo_url="https://github.com/gdgoc-psit/hacktoberfest-android",
-            platform=PlatformType.ANDROID,
-        )
-        db.add_all([r1, r2])
-        db.commit()
-        db.refresh(r1)
-        db.refresh(r2)
-        repos = [r1, r2]
     return repos
 
 
