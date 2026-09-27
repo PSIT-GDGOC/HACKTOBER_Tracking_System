@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     # GitHub OAuth (student GitHub account linking)
     GITHUB_CLIENT_ID: str = ""
     GITHUB_CLIENT_SECRET: str = ""
-    GITHUB_OAUTH_REDIRECT_URI: str = "http://localhost:5173/#/auth/callback"
+    GITHUB_OAUTH_REDIRECT_URI: str = "https://hacktober-tracking-system-ocai.vercel.app/#/auth/callback"
 
     # PSIT Portal Integration
     PSIT_PORTAL_BASE_URL: str = "https://www.psit.ac.in/op"

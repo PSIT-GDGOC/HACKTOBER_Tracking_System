@@ -25,26 +25,49 @@ app.add_middleware(
 )
 
 
+@app.get("/", tags=["System"])
+@app.get("/api", tags=["System"])
+def root():
+    """Root endpoint for status check."""
+    return {
+        "status": "online",
+        "app": settings.APP_NAME,
+        "environment": settings.ENV,
+        "docs": "/docs",
+        "api_docs": "/api/docs",
+        "health": "/api/health",
+    }
+
+
 @app.get("/health", tags=["System"])
+@app.get("/api/health", tags=["System"])
 def health_check():
     """Health check endpoint to verify backend service status."""
     return {
         "status": "healthy",
         "app": settings.APP_NAME,
-        "environment": settings.ENV
+        "environment": settings.ENV,
     }
 
 
-# Include Routers
+# Include Routers — mount both at root and under /api prefix for Vercel serverless rewrites
 from app.routers import auth, issues, webhooks, pull_requests, commits, contributions, dashboard, users, engagement, search
-app.include_router(auth.router)
-app.include_router(issues.router)
-app.include_router(webhooks.router)
-app.include_router(pull_requests.router)
-app.include_router(commits.router)
-app.include_router(contributions.router)
-app.include_router(dashboard.router)
-app.include_router(users.router)
-app.include_router(engagement.router)
-app.include_router(search.router)
+
+all_routers = [
+    auth.router,
+    issues.router,
+    webhooks.router,
+    pull_requests.router,
+    commits.router,
+    contributions.router,
+    dashboard.router,
+    users.router,
+    engagement.router,
+    search.router,
+]
+
+for router in all_routers:
+    app.include_router(router)
+    app.include_router(router, prefix="/api")
+
 

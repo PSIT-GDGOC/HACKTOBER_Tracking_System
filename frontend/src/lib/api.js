@@ -34,9 +34,9 @@
  */
 
 export const API_BASE_URL =
-  (import.meta.env && import.meta.env.VITE_API_BASE_URL) || "";
+  (import.meta.env && import.meta.env.VITE_API_BASE_URL) || "/api";
 
-export const DEMO_MODE = API_BASE_URL === "";
+export const DEMO_MODE = API_BASE_URL === "demo";
 
 const TOKEN_KEY = "gdgoc_access_token";
 const EXPIRY_KEY = "gdgoc_token_expiry";
