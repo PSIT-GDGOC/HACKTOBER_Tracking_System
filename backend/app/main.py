@@ -50,6 +50,21 @@ def health_check():
     }
 
 
+@app.get("/api/test-db", tags=["System"])
+def test_db():
+    """Diagnostic endpoint to inspect DB connection status on serverless."""
+    try:
+        from app.db import SessionLocal
+        from sqlalchemy import text
+        db = SessionLocal()
+        res = db.execute(text("SELECT 1")).scalar()
+        db.close()
+        return {"db": "connected", "result": res}
+    except Exception as e:
+        import traceback
+        return {"db": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+
 # Include Routers — mount both at root and under /api prefix for Vercel serverless rewrites
 from app.routers import auth, issues, webhooks, pull_requests, commits, contributions, dashboard, users, engagement, search
 
