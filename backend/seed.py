@@ -93,8 +93,8 @@ def seed_database():
 
         print("Creating repositories...")
         web_repo = Repository(
-            name="gdgoc-hacktoberfest-web",
-            github_repo_url="https://github.com/gdgoc-psit/hacktoberfest-web",
+            name="hacktoberfest-web",
+            github_repo_url="https://github.com/PSIT-GDGOC/hacktoberfest-web",
             platform=PlatformType.WEB,
         )
         android_repo = Repository(
