@@ -30,24 +30,36 @@ def verify_github_signature(raw_body: bytes, signature_header: Optional[str]) ->
     Prevents unauthorized or spoofed webhook payloads.
     """
     secret = settings.GITHUB_WEBHOOK_SECRET
-    if not secret:
-        # In local dev if no secret configured, allow with warning
-        logger.warning("GITHUB_WEBHOOK_SECRET is empty. Webhook signature verification bypassed.")
-        return True
 
-    if not signature_header:
-        return False
+    # If a secret is configured or running in production:
+    if secret or (settings.ENV != "development" and not settings.DEBUG):
+        if not secret:
+            logger.error("Rejecting webhook in production: GITHUB_WEBHOOK_SECRET is not configured.")
+            return False
+        if not signature_header or not signature_header.startswith("sha256="):
+            logger.error("Rejecting webhook: Missing or malformed X-Hub-Signature-256 header.")
+            return False
+        expected_signature = "sha256=" + hmac.new(
+            key=secret.encode("utf-8"),
+            msg=raw_body,
+            digestmod=hashlib.sha256
+        ).hexdigest()
+        return hmac.compare_digest(expected_signature, signature_header)
 
-    if not signature_header.startswith("sha256="):
-        return False
+    # In local development / test mode with no secret configured:
+    if signature_header:
+        dev_secret = "dev_webhook_secret_for_testing"
+        if not signature_header.startswith("sha256="):
+            return False
+        expected_signature = "sha256=" + hmac.new(
+            key=dev_secret.encode("utf-8"),
+            msg=raw_body,
+            digestmod=hashlib.sha256
+        ).hexdigest()
+        return hmac.compare_digest(expected_signature, signature_header)
 
-    expected_signature = "sha256=" + hmac.new(
-        key=secret.encode("utf-8"),
-        msg=raw_body,
-        digestmod=hashlib.sha256
-    ).hexdigest()
-
-    return hmac.compare_digest(expected_signature, signature_header)
+    logger.warning("No secret configured and no signature provided. Allowed only in dev/test environment.")
+    return True
 
 
 def process_webhook_event(event_type: str, payload: Dict[str, Any], db: Session) -> Dict[str, Any]:

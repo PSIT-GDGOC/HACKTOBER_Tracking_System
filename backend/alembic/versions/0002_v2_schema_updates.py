@@ -47,6 +47,7 @@ def upgrade() -> None:
     op.create_table(
         "webhook_jobs",
         sa.Column("id", sa.Integer(), primary_key=True, nullable=False),
+        sa.Column("delivery_id", sa.String(length=100), nullable=True),
         sa.Column("event_type", sa.String(length=100), nullable=False, server_default="unknown"),
         sa.Column("payload_json", sa.JSON(), nullable=False),
         sa.Column(
@@ -62,6 +63,7 @@ def upgrade() -> None:
         sa.Column("updated_at", sa.DateTime(), nullable=False, server_default=sa.func.now()),
     )
     op.create_index("ix_webhook_jobs_id", "webhook_jobs", ["id"])
+    op.create_index("ix_webhook_jobs_delivery_id", "webhook_jobs", ["delivery_id"], unique=True)
     op.create_index("ix_webhook_jobs_event_type", "webhook_jobs", ["event_type"])
     op.create_index("ix_webhook_jobs_status", "webhook_jobs", ["status"])
     op.create_index("ix_webhook_jobs_next_attempt_at", "webhook_jobs", ["next_attempt_at"])
@@ -78,6 +80,7 @@ def downgrade() -> None:
     op.drop_index("ix_webhook_jobs_next_attempt_at", table_name="webhook_jobs")
     op.drop_index("ix_webhook_jobs_status", table_name="webhook_jobs")
     op.drop_index("ix_webhook_jobs_event_type", table_name="webhook_jobs")
+    op.drop_index("ix_webhook_jobs_delivery_id", table_name="webhook_jobs")
     op.drop_index("ix_webhook_jobs_id", table_name="webhook_jobs")
     op.drop_table("webhook_jobs")
 

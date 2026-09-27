@@ -4,9 +4,11 @@ from typing import Optional, List
 from fastapi import APIRouter, Header, HTTPException, Request, Depends, status, Query
 from sqlalchemy.orm import Session
 
+from app.config import settings
 from app.db import get_db
+from app.dependencies import get_current_user, require_roles
 from app.schemas.webhook import WebhookResponse
-from app.models import WebhookJob, WebhookJobStatus
+from app.models import User, UserRole, WebhookJob, WebhookJobStatus
 from app.services.webhook_service import verify_github_signature
 from app.services.webhook_job_service import (
     create_webhook_job,
@@ -23,13 +25,14 @@ router = APIRouter(prefix="/webhooks", tags=["Webhooks"])
 async def github_webhook_receiver(
     request: Request,
     x_github_event: Optional[str] = Header("ping", alias="X-GitHub-Event"),
+    x_github_delivery: Optional[str] = Header(None, alias="X-GitHub-Delivery"),
     x_hub_signature_256: Optional[str] = Header(None, alias="X-Hub-Signature-256"),
     db: Session = Depends(get_db),
 ):
     """
     Primary GitHub Webhook receiver (v2 Architecture - No Celery / No Redis):
     1. Cryptographically verifies HMAC-SHA256 signature against GITHUB_WEBHOOK_SECRET.
-    2. Persists payload to Table #11 (`webhook_jobs`) with status 'pending'.
+    2. Persists payload to Table #11 (`webhook_jobs`) with idempotency check on X-GitHub-Delivery.
     3. Executes event dispatch through the job engine:
        - 'issues' (status/difficulty/category sync)
        - 'pull_request' (auto-links PRs to claimed issues by GitHub username)
@@ -57,8 +60,27 @@ async def github_webhook_receiver(
 
     action = payload.get("action")
 
-    # 3. Persist incoming webhook event into Table #11 (webhook_jobs)
-    job = create_webhook_job(db=db, event_type=x_github_event, payload=payload)
+    # 3. Persist incoming webhook event with idempotency check
+    job, is_new = create_webhook_job(
+        db=db,
+        event_type=x_github_event,
+        payload=payload,
+        delivery_id=x_github_delivery
+    )
+
+    if not is_new:
+        return WebhookResponse(
+            status="success",
+            event=x_github_event,
+            action=action,
+            detail=f"Duplicate webhook delivery '{x_github_delivery}' acknowledged (job #{job.id})",
+            data={
+                "job_id": job.id,
+                "status": job.status.value,
+                "attempts": job.attempts,
+                "duplicate": True
+            }
+        )
 
     # 4. Execute through the native job runner
     exec_result = execute_webhook_job(job=job, db=db)
@@ -83,12 +105,31 @@ async def github_webhook_receiver(
 @router.post("/jobs/drain", summary="Drain Due Webhook Jobs (Supabase pg_cron Sweep)")
 def drain_webhook_jobs(
     limit: int = Query(20, ge=1, le=100),
+    x_cron_key: Optional[str] = Header(None, alias="X-Cron-Key"),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
     db: Session = Depends(get_db)
 ):
     """
     Drains pending or due-for-retry rows from Table #11 (`webhook_jobs`).
     Scheduled via Supabase pg_cron or invoked for manual queue sweeps.
+    In production, requires X-Cron-Key header or Admin Bearer token.
     """
+    if settings.ENV != "development" and not settings.DEBUG:
+        is_cron = bool(x_cron_key and settings.SECRET_KEY and x_cron_key == settings.SECRET_KEY)
+        is_admin = False
+        if authorization and authorization.lower().startswith("bearer "):
+            try:
+                user = get_current_user(authorization=authorization, db=db)
+                if user.role == UserRole.ADMIN:
+                    is_admin = True
+            except Exception:
+                pass
+        if not (is_cron or is_admin):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Unauthorized: Admin bearer token or valid X-Cron-Key required to drain webhook jobs in production."
+            )
+
     results = drain_due_webhook_jobs(db=db, batch_size=limit)
     return {
         "status": "success",
@@ -97,13 +138,13 @@ def drain_webhook_jobs(
     }
 
 
-@router.get("/jobs", summary="List Webhook Jobs")
+@router.get("/jobs", summary="List Webhook Jobs", dependencies=[Depends(require_roles(UserRole.ADMIN))])
 def list_webhook_jobs(
     limit: int = Query(50, ge=1, le=100),
     status_filter: Optional[str] = Query(None, alias="status"),
     db: Session = Depends(get_db)
 ):
-    """List recent webhook jobs for monitoring and audit logging."""
+    """List recent webhook jobs for monitoring and audit logging (Admin only)."""
     query = db.query(WebhookJob)
     if status_filter:
         query = query.filter(WebhookJob.status == status_filter)
@@ -113,6 +154,7 @@ def list_webhook_jobs(
         "items": [
             {
                 "id": j.id,
+                "delivery_id": j.delivery_id,
                 "event_type": j.event_type,
                 "status": j.status.value,
                 "attempts": j.attempts,

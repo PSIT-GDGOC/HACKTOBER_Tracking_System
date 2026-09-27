@@ -10,7 +10,7 @@
  *   GET  /auth/github/login  → { oauth_url }
  *   POST /auth/github/link { github_username }
  */
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { api, tokenStore } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
@@ -595,7 +595,7 @@ export function AuthWizard() {
                       onClick={async () => {
                         try {
                           const { oauth_url } = await api.githubLoginUrl();
-                          window.open(oauth_url, "_blank", "noopener");
+                          window.location.href = oauth_url;
                         } catch {
                           setError("Could not start the GitHub OAuth flow — link your username manually instead.");
                         }
@@ -753,6 +753,145 @@ export function Login() {
               Create an account
             </Link>
           </p>
+        </Panel>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  GitHub OAuth Callback Handler (BUG-03)                             */
+/* ------------------------------------------------------------------ */
+
+export function GitHubOAuthCallback() {
+  const nav = useNavigate();
+  const location = useLocation();
+  const { isAuthenticated, loading, refreshUser } = useAuth();
+  const [status, setStatus] = useState("processing"); // 'processing' | 'success' | 'error'
+  const [message, setMessage] = useState("");
+  const [linkedUsername, setLinkedUsername] = useState("");
+  const processedRef = useRef(false);
+
+  useEffect(() => {
+    if (loading) return;
+
+    // Extract authorization code or error parameters from URL query strings
+    // Handles both hash-query (?code=...#/auth/callback) and router query (#/auth/callback?code=...)
+    const routerParams = new URLSearchParams(location.search);
+    const windowParams = new URLSearchParams(window.location.search);
+
+    const oauthError =
+      routerParams.get("error_description") ||
+      routerParams.get("error") ||
+      windowParams.get("error_description") ||
+      windowParams.get("error");
+
+    if (oauthError) {
+      setStatus("error");
+      setMessage(oauthError);
+      return;
+    }
+
+    const code = routerParams.get("code") || windowParams.get("code");
+    if (!code) {
+      setStatus("error");
+      setMessage("No authorization code provided in the GitHub callback URL.");
+      return;
+    }
+
+    if (!isAuthenticated) {
+      setStatus("error");
+      setMessage("Please log into your account before connecting your GitHub identity.");
+      return;
+    }
+
+    if (processedRef.current) return;
+    processedRef.current = true;
+
+    async function exchangeCode() {
+      try {
+        const res = await api.githubCallback({ code });
+        setStatus("success");
+        setLinkedUsername(res.github_username || "");
+        setMessage(res.message || "GitHub identity linked successfully!");
+        await refreshUser().catch(() => {});
+        setTimeout(() => {
+          nav("/dashboard", { replace: true });
+        }, 2200);
+      } catch (err) {
+        setStatus("error");
+        setMessage(err?.detail || err?.message || "Failed to exchange GitHub authorization code.");
+      }
+    }
+
+    exchangeCode();
+  }, [loading, isAuthenticated, location.search, nav, refreshUser]);
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-paper grid-paper px-4 py-10">
+      <div className="w-full max-w-md">
+        <Panel className="p-7 text-center">
+          <div className="flex justify-center">
+            <GdgMark size={44} />
+          </div>
+
+          <h1 className="mt-5 font-display text-2xl font-extrabold uppercase tracking-tight">
+            GitHub Authorization
+          </h1>
+
+          {status === "processing" && (
+            <div className="mt-6 flex flex-col items-center gap-3">
+              <span className="h-8 w-8 animate-spin rounded-full border-4 border-ink border-t-transparent" />
+              <p className="font-mono text-xs uppercase tracking-wider text-ink-soft">
+                Exchanging code with GitHub…
+              </p>
+            </div>
+          )}
+
+          {status === "success" && (
+            <div className="mt-6 space-y-4">
+              <div className="border-[3px] border-ink bg-ggreen-light p-4 shadow-[4px_4px_0_0_#101010]">
+                <Badge tone="green" dot>Connected</Badge>
+                {linkedUsername && (
+                  <p className="mt-2 font-display text-lg font-extrabold">@{linkedUsername}</p>
+                )}
+                <p className="mt-1 text-xs text-ink-soft">{message}</p>
+              </div>
+              <p className="font-mono text-[11px] text-ink-soft">Redirecting to dashboard in a moment…</p>
+              <Button variant="green" size="md" className="w-full" onClick={() => nav("/dashboard")}>
+                Go to Dashboard Now →
+              </Button>
+            </div>
+          )}
+
+          {status === "error" && (
+            <div className="mt-6 space-y-4 text-left">
+              <div className="border-[3px] border-ink bg-gred-light p-4 shadow-[4px_4px_0_0_#101010]">
+                <p className="font-display text-sm font-extrabold uppercase text-gred">Linking Failed</p>
+                <p className="mt-1 font-mono text-xs text-ink-soft">{message}</p>
+              </div>
+              <div className="flex flex-col gap-2 pt-2">
+                {!isAuthenticated ? (
+                  <Link to="/login" className="w-full">
+                    <Button variant="blue" size="md" className="w-full">
+                      Log in first →
+                    </Button>
+                  </Link>
+                ) : (
+                  <Link to="/join" className="w-full">
+                    <Button variant="ink" size="md" className="w-full">
+                      Return to Onboarding Wizard
+                    </Button>
+                  </Link>
+                )}
+                <Link to="/dashboard" className="w-full">
+                  <Button variant="paper" size="md" className="w-full">
+                    Continue to Dashboard
+                  </Button>
+                </Link>
+              </div>
+            </div>
+          )}
         </Panel>
       </div>
     </div>

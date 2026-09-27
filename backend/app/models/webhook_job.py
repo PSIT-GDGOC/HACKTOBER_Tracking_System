@@ -15,6 +15,7 @@ class WebhookJob(Base):
     __tablename__ = "webhook_jobs"
 
     id = Column(Integer, primary_key=True, index=True)
+    delivery_id = Column(String(100), nullable=True, unique=True, index=True)
     event_type = Column(String(100), nullable=False, default="unknown", index=True)
     payload_json = Column(JSON, nullable=False)
     status = Column(

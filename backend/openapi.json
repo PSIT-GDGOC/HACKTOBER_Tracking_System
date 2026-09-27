@@ -6,6 +6,66 @@
     "version": "1.0.0"
   },
   "paths": {
+    "/api": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "summary": "Root",
+        "description": "Root endpoint for status check.",
+        "operationId": "root_api_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "summary": "Root",
+        "description": "Root endpoint for status check.",
+        "operationId": "root__get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/health": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "summary": "Health Check",
+        "description": "Health check endpoint to verify backend service status.",
+        "operationId": "health_check_api_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
     "/health": {
       "get": {
         "tags": [
@@ -14,6 +74,26 @@
         "summary": "Health Check",
         "description": "Health check endpoint to verify backend service status.",
         "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/test-db": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "summary": "Test Db",
+        "description": "Diagnostic endpoint to inspect DB connection status on serverless.",
+        "operationId": "test_db_api_test_db_get",
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -510,6 +590,83 @@
                 "schema": {
                   "$ref": "#/components/schemas/UserProfileResponse"
                 }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/id-card-image/{student_id}": {
+      "get": {
+        "tags": [
+          "Auth & Verification"
+        ],
+        "summary": "Admin-only: Retrieve uploaded ID card photo for manual review",
+        "description": "Admin-only: securely serves the stored ID card photo for a student in the\nmanual verification queue without exposing raw storage keys or PII publicly.",
+        "operationId": "get_student_id_card_image_auth_id_card_image__student_id__get",
+        "parameters": [
+          {
+            "name": "student_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Student Id"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
               }
             }
           },
@@ -1178,7 +1335,7 @@
           "Webhooks"
         ],
         "summary": "GitHub Webhook Receiver",
-        "description": "Primary GitHub Webhook receiver (v2 Architecture - No Celery / No Redis):\n1. Cryptographically verifies HMAC-SHA256 signature against GITHUB_WEBHOOK_SECRET.\n2. Persists payload to Table #11 (`webhook_jobs`) with status 'pending'.\n3. Executes event dispatch through the job engine:\n   - 'issues' (status/difficulty/category sync)\n   - 'pull_request' (auto-links PRs to claimed issues by GitHub username)\n   - 'push' (records commits and links to contributors/issues)\n   - 'pull_request_review' (updates contribution state and notifies student)\n4. Automatically handles retries with exponential backoff on transient errors.",
+        "description": "Primary GitHub Webhook receiver (v2 Architecture - No Celery / No Redis):\n1. Cryptographically verifies HMAC-SHA256 signature against GITHUB_WEBHOOK_SECRET.\n2. Persists payload to Table #11 (`webhook_jobs`) with idempotency check on X-GitHub-Delivery.\n3. Executes event dispatch through the job engine:\n   - 'issues' (status/difficulty/category sync)\n   - 'pull_request' (auto-links PRs to claimed issues by GitHub username)\n   - 'push' (records commits and links to contributors/issues)\n   - 'pull_request_review' (updates contribution state and notifies student)\n4. Automatically handles retries with exponential backoff on transient errors.",
         "operationId": "github_webhook_receiver_webhooks_github_post",
         "parameters": [
           {
@@ -1196,6 +1353,22 @@
               ],
               "default": "ping",
               "title": "X-Github-Event"
+            }
+          },
+          {
+            "name": "X-GitHub-Delivery",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Github-Delivery"
             }
           },
           {
@@ -1245,7 +1418,7 @@
           "Webhooks"
         ],
         "summary": "Drain Due Webhook Jobs (Supabase pg_cron Sweep)",
-        "description": "Drains pending or due-for-retry rows from Table #11 (`webhook_jobs`).\nScheduled via Supabase pg_cron or invoked for manual queue sweeps.",
+        "description": "Drains pending or due-for-retry rows from Table #11 (`webhook_jobs`).\nScheduled via Supabase pg_cron or invoked for manual queue sweeps.\nIn production, requires X-Cron-Key header or Admin Bearer token.",
         "operationId": "drain_webhook_jobs_webhooks_jobs_drain_post",
         "parameters": [
           {
@@ -1258,6 +1431,38 @@
               "minimum": 1,
               "default": 20,
               "title": "Limit"
+            }
+          },
+          {
+            "name": "X-Cron-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Cron-Key"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
             }
           }
         ],
@@ -1289,7 +1494,7 @@
           "Webhooks"
         ],
         "summary": "List Webhook Jobs",
-        "description": "List recent webhook jobs for monitoring and audit logging.",
+        "description": "List recent webhook jobs for monitoring and audit logging (Admin only).",
         "operationId": "list_webhook_jobs_webhooks_jobs_get",
         "parameters": [
           {
@@ -1319,6 +1524,42 @@
               ],
               "title": "Status"
             }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
           }
         ],
         "responses": {
@@ -3048,6 +3289,3260 @@
         "summary": "Unified multi-entity global search",
         "description": "Search across issues, pull requests, contributors, repositories, and commits with full-text query matching.",
         "operationId": "global_search_search_get",
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Search query string",
+              "title": "Q"
+            },
+            "description": "Search query string"
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter results by category: 'all', 'issues', 'pull_requests', 'contributors', 'repositories', 'commits'",
+              "default": "all",
+              "title": "Category"
+            },
+            "description": "Filter results by category: 'all', 'issues', 'pull_requests', 'contributors', 'repositories', 'commits'"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 50,
+              "minimum": 1,
+              "description": "Max results per entity type",
+              "default": 10,
+              "title": "Limit"
+            },
+            "description": "Max results per entity type"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnifiedSearchResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/signup": {
+      "post": {
+        "tags": [
+          "Auth & Verification"
+        ],
+        "summary": "Register as a new student",
+        "description": "Register student with official PSIT roll number (exactly 13 alphanumeric chars) and name.\nAccount is created in unverified state \u2014 student must complete ID card / QR verification next.",
+        "operationId": "signup_api_auth_signup_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignupRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignupResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "tags": [
+          "Auth & Verification"
+        ],
+        "summary": "Log in with roll number or email",
+        "description": "Authenticate student, maintainer, or admin.\nIssues a cryptographically signed JWT scoped by user ID and role.\nIf the account has a password set, password verification is strictly enforced.",
+        "operationId": "login_api_auth_login_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LoginRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TokenResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/set-password": {
+      "post": {
+        "tags": [
+          "Auth & Verification"
+        ],
+        "summary": "Set account password after verification",
+        "description": "Set a strong password for the authenticated student account.\nRequires an active authenticated session (JWT).",
+        "operationId": "set_password_api_auth_set_password_post",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SetPasswordRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SetPasswordResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "tags": [
+          "Auth & Verification"
+        ],
+        "summary": "Get authenticated user session",
+        "description": "Retrieve profile for the currently logged-in user. Protected by Bearer JWT.",
+        "operationId": "get_me_api_auth_me_get",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserProfileResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/verify-id": {
+      "post": {
+        "tags": [
+          "Auth & Verification"
+        ],
+        "summary": "Submit ID card photo for server-side QR + PSIT portal verification",
+        "description": "Server-side student verification \u2014 **the client sends only the raw image**.\n\nPipeline (all server-side):\n1. Validates JPEG/PNG format and \u22645 MB size.\n2. Decodes QR from image using OpenCV + pyzbar (5-attempt pipeline).\n3. Validates QR URL format: https://www.psit.ac.in/op/card-preview/<32-hex-token>\n4. Fetches student data from PSIT portal API using the 32-char token.\n5. Cross-checks: roll number must match exactly; name must fuzzy-match \u226570%.\n6. Auto-verifies on full match.\n   On any failure \u2192 admin manual review queue (never silent rejection).",
+        "operationId": "verify_id_card_api_auth_verify_id_post",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyIDCardRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerifyIDCardResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/pending-verifications": {
+      "get": {
+        "tags": [
+          "Auth & Verification"
+        ],
+        "summary": "Admin review queue for pending verifications",
+        "description": "Admin-only: returns unverified students who uploaded ID card photos\nbut could not be auto-verified (QR unreadable / portal unavailable / name mismatch).",
+        "operationId": "get_pending_verifications_api_auth_pending_verifications_get",
+        "parameters": [
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Skip"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ManualReviewItemResponse"
+                  },
+                  "title": "Response Get Pending Verifications Api Auth Pending Verifications Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/verify-manual/{student_id}": {
+      "post": {
+        "tags": [
+          "Auth & Verification"
+        ],
+        "summary": "Admin approve or reject student verification",
+        "description": "Admin decision: approve or reject student after manual ID review.",
+        "operationId": "manual_verify_student_api_auth_verify_manual__student_id__post",
+        "parameters": [
+          {
+            "name": "student_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Student Id"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ManualReviewActionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserProfileResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/id-card-image/{student_id}": {
+      "get": {
+        "tags": [
+          "Auth & Verification"
+        ],
+        "summary": "Admin-only: Retrieve uploaded ID card photo for manual review",
+        "description": "Admin-only: securely serves the stored ID card photo for a student in the\nmanual verification queue without exposing raw storage keys or PII publicly.",
+        "operationId": "get_student_id_card_image_api_auth_id_card_image__student_id__get",
+        "parameters": [
+          {
+            "name": "student_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Student Id"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/github/login": {
+      "get": {
+        "tags": [
+          "Auth & Verification"
+        ],
+        "summary": "Get GitHub OAuth authorization URL",
+        "description": "Returns the GitHub OAuth authorization URL for the frontend Auth Wizard.\nFrontend redirects the user to oauth_url; GitHub then redirects back to\nGITHUB_OAUTH_REDIRECT_URI with ?code=... which is handled by /auth/github/callback.",
+        "operationId": "github_oauth_login_api_auth_github_login_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/github/callback": {
+      "post": {
+        "tags": [
+          "Auth & Verification"
+        ],
+        "summary": "GitHub OAuth callback \u2014 exchange code and link GitHub identity",
+        "description": "Called by the frontend after GitHub redirects back with ?code=...\n\nFlow:\n1. Exchange one-time code for GitHub access token (server-side).\n2. Fetch authenticated GitHub user profile (login, id).\n3. Link GitHub username + id to the student's platform account.\n4. Guard: one GitHub account per student; one student per GitHub account.",
+        "operationId": "github_oauth_callback_api_auth_github_callback_post",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GitHubOAuthCallbackRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubOAuthLinkResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/github/link": {
+      "post": {
+        "tags": [
+          "Auth & Verification"
+        ],
+        "summary": "Manually link a GitHub username (fallback / dev use)",
+        "description": "Fallback: link GitHub username directly without OAuth code exchange.\nUsed during local development or if the OAuth flow is unavailable.\nPrefer /auth/github/callback for production.",
+        "operationId": "link_github_api_auth_github_link_post",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GitHubOAuthLinkRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubOAuthLinkResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/issues/repositories": {
+      "get": {
+        "tags": [
+          "Issues"
+        ],
+        "summary": "List registered repositories",
+        "description": "Return all registered official repositories.",
+        "operationId": "list_repositories_api_issues_repositories_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/RepositoryBrief"
+                  },
+                  "type": "array",
+                  "title": "Response List Repositories Api Issues Repositories Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/issues/sync": {
+      "post": {
+        "tags": [
+          "Issues"
+        ],
+        "summary": "Sync issues from GitHub",
+        "description": "Backfill / sync issues from GitHub REST API for registered official repositories.\nParses labels to automatically classify difficulty, category, and tech tags.",
+        "operationId": "sync_issues_api_issues_sync_post",
+        "parameters": [
+          {
+            "name": "repo_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional Repository ID to sync. If omitted, all repos sync.",
+              "title": "Repo Id"
+            },
+            "description": "Optional Repository ID to sync. If omitted, all repos sync."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueSyncResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/issues": {
+      "get": {
+        "tags": [
+          "Issues"
+        ],
+        "summary": "List issues with filters",
+        "description": "Explore issues with multi-attribute filtering (repo, platform, difficulty, category, tech tag, status, keyword search).",
+        "operationId": "list_issues_api_issues_get",
+        "parameters": [
+          {
+            "name": "repo_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by repository ID",
+              "title": "Repo Id"
+            },
+            "description": "Filter by repository ID"
+          },
+          {
+            "name": "platform",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by platform: web or android/phone",
+              "title": "Platform"
+            },
+            "description": "Filter by platform: web or android/phone"
+          },
+          {
+            "name": "difficulty",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/IssueDifficulty"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by difficulty (easy, medium, hard)",
+              "title": "Difficulty"
+            },
+            "description": "Filter by difficulty (easy, medium, hard)"
+          },
+          {
+            "name": "tech_tag",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by technology tag (e.g. React, Kotlin)",
+              "title": "Tech Tag"
+            },
+            "description": "Filter by technology tag (e.g. React, Kotlin)"
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by category (frontend, backend, ui/ux, etc.)",
+              "title": "Category"
+            },
+            "description": "Filter by category (frontend, backend, ui/ux, etc.)"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/IssueStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by status (open, claimed, in_progress, closed)",
+              "title": "Status"
+            },
+            "description": "Filter by status (open, claimed, in_progress, closed)"
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Search in issue title or description",
+              "title": "Search"
+            },
+            "description": "Search in issue title or description"
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Offset pagination skip",
+              "default": 0,
+              "title": "Skip"
+            },
+            "description": "Offset pagination skip"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Pagination limit",
+              "default": 20,
+              "title": "Limit"
+            },
+            "description": "Pagination limit"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/issues/{issue_id}": {
+      "get": {
+        "tags": [
+          "Issues"
+        ],
+        "summary": "Get issue details",
+        "description": "Fetch comprehensive details for a single issue, including repository info and active claim details if claimed.",
+        "operationId": "get_issue_api_issues__issue_id__get",
+        "parameters": [
+          {
+            "name": "issue_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Issue Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/issues/{issue_id}/claim": {
+      "post": {
+        "tags": [
+          "Issues"
+        ],
+        "summary": "Claim an open issue",
+        "description": "Atomically claim an open issue.\n- Locks issue row and catches race conditions via database unique constraint.\n- Enforces maximum active claim limit per student.\n- Transitions issue status to 'claimed' and creates contribution record.",
+        "operationId": "claim_api_issues__issue_id__claim_post",
+        "parameters": [
+          {
+            "name": "issue_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Issue Id"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaimResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/issues/{issue_id}/unclaim": {
+      "post": {
+        "tags": [
+          "Issues"
+        ],
+        "summary": "Release an active claim",
+        "description": "Release a claimed issue back to 'open' status.\nCan only be performed by the claim owner, a maintainer, or an admin.",
+        "operationId": "unclaim_api_issues__issue_id__unclaim_post",
+        "parameters": [
+          {
+            "name": "issue_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Issue Id"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ClaimReleaseResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/webhooks/github": {
+      "post": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "GitHub Webhook Receiver",
+        "description": "Primary GitHub Webhook receiver (v2 Architecture - No Celery / No Redis):\n1. Cryptographically verifies HMAC-SHA256 signature against GITHUB_WEBHOOK_SECRET.\n2. Persists payload to Table #11 (`webhook_jobs`) with idempotency check on X-GitHub-Delivery.\n3. Executes event dispatch through the job engine:\n   - 'issues' (status/difficulty/category sync)\n   - 'pull_request' (auto-links PRs to claimed issues by GitHub username)\n   - 'push' (records commits and links to contributors/issues)\n   - 'pull_request_review' (updates contribution state and notifies student)\n4. Automatically handles retries with exponential backoff on transient errors.",
+        "operationId": "github_webhook_receiver_api_webhooks_github_post",
+        "parameters": [
+          {
+            "name": "X-GitHub-Event",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "ping",
+              "title": "X-Github-Event"
+            }
+          },
+          {
+            "name": "X-GitHub-Delivery",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Github-Delivery"
+            }
+          },
+          {
+            "name": "X-Hub-Signature-256",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Hub-Signature-256"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WebhookResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/webhooks/jobs/drain": {
+      "post": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "Drain Due Webhook Jobs (Supabase pg_cron Sweep)",
+        "description": "Drains pending or due-for-retry rows from Table #11 (`webhook_jobs`).\nScheduled via Supabase pg_cron or invoked for manual queue sweeps.\nIn production, requires X-Cron-Key header or Admin Bearer token.",
+        "operationId": "drain_webhook_jobs_api_webhooks_jobs_drain_post",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "X-Cron-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X-Cron-Key"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/webhooks/jobs": {
+      "get": {
+        "tags": [
+          "Webhooks"
+        ],
+        "summary": "List Webhook Jobs",
+        "description": "List recent webhook jobs for monitoring and audit logging (Admin only).",
+        "operationId": "list_webhook_jobs_api_webhooks_jobs_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/pull-requests": {
+      "get": {
+        "tags": [
+          "Pull Requests"
+        ],
+        "summary": "List pull requests with filters",
+        "description": "List pull requests across repositories with filtering by repo, contributor, and status.",
+        "operationId": "list_prs_api_pull_requests_get",
+        "parameters": [
+          {
+            "name": "repo_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by repository ID",
+              "title": "Repo Id"
+            },
+            "description": "Filter by repository ID"
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by contributor user ID",
+              "title": "User Id"
+            },
+            "description": "Filter by contributor user ID"
+          },
+          {
+            "name": "github_username",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by contributor GitHub username",
+              "title": "Github Username"
+            },
+            "description": "Filter by contributor GitHub username"
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/PRStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by status (open, merged, closed, draft)",
+              "title": "Status"
+            },
+            "description": "Filter by status (open, merged, closed, draft)"
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Offset pagination skip",
+              "default": 0,
+              "title": "Skip"
+            },
+            "description": "Offset pagination skip"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Pagination limit",
+              "default": 20,
+              "title": "Limit"
+            },
+            "description": "Pagination limit"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PRListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/pull-requests/{pr_id}": {
+      "get": {
+        "tags": [
+          "Pull Requests"
+        ],
+        "summary": "Get single pull request details",
+        "description": "Retrieve full details for a pull request, including linked issue, reviews, author, and reviewer.",
+        "operationId": "get_pr_api_pull_requests__pr_id__get",
+        "parameters": [
+          {
+            "name": "pr_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Pr Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PRResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/commits": {
+      "get": {
+        "tags": [
+          "Commits"
+        ],
+        "summary": "List commits",
+        "description": "List commits across repositories and contributors.",
+        "operationId": "list_commits_api_commits_get",
+        "parameters": [
+          {
+            "name": "repo_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter commits by repository ID",
+              "title": "Repo Id"
+            },
+            "description": "Filter commits by repository ID"
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter commits by contributor user ID",
+              "title": "User Id"
+            },
+            "description": "Filter commits by contributor user ID"
+          },
+          {
+            "name": "github_username",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter commits by contributor GitHub username",
+              "title": "Github Username"
+            },
+            "description": "Filter commits by contributor GitHub username"
+          },
+          {
+            "name": "pr_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter commits by pull request ID",
+              "title": "Pr Id"
+            },
+            "description": "Filter commits by pull request ID"
+          },
+          {
+            "name": "issue_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter commits by linked issue ID",
+              "title": "Issue Id"
+            },
+            "description": "Filter commits by linked issue ID"
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Offset pagination skip",
+              "default": 0,
+              "title": "Skip"
+            },
+            "description": "Offset pagination skip"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Pagination limit",
+              "default": 30,
+              "title": "Limit"
+            },
+            "description": "Pagination limit"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommitListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/contributions": {
+      "get": {
+        "tags": [
+          "Contributions"
+        ],
+        "summary": "List contributions with moderation filters",
+        "description": "List contributions across the platform with filtering by lifecycle status and validation status.\nUseful for maintainers and moderators.",
+        "operationId": "get_all_contributions_api_contributions_get",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ContributionStatus"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by contribution status",
+              "title": "Status"
+            },
+            "description": "Filter by contribution status"
+          },
+          {
+            "name": "validation_status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/ContributionValidation"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by validation status",
+              "title": "Validation Status"
+            },
+            "description": "Filter by validation status"
+          },
+          {
+            "name": "skip",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 0,
+              "title": "Skip"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 30,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/ContributionResponse"
+                  },
+                  "title": "Response Get All Contributions Api Contributions Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/contributions/my": {
+      "get": {
+        "tags": [
+          "Contributions"
+        ],
+        "summary": "Get full contribution timeline for authenticated user",
+        "description": "Get the authenticated student's full contribution history and timeline.",
+        "operationId": "get_my_timeline_api_contributions_my_get",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserContributionTimelineResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/contributions/{user_id}": {
+      "get": {
+        "tags": [
+          "Contributions"
+        ],
+        "summary": "Get full contribution timeline for user",
+        "description": "Get full contribution history and timeline for a contributor:\nLifecycle progression: claimed \u2192 in_progress \u2192 pr_submitted \u2192 under_review \u2192 changes_requested \u2192 accepted \u2192 merged.",
+        "operationId": "get_timeline_api_contributions__user_id__get",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserContributionTimelineResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/contributions/{user_id}/timeline": {
+      "get": {
+        "tags": [
+          "Contributions"
+        ],
+        "summary": "Get full contribution timeline for user (alias)",
+        "description": "Get full contribution history and timeline for a contributor:\nLifecycle progression: claimed \u2192 in_progress \u2192 pr_submitted \u2192 under_review \u2192 changes_requested \u2192 accepted \u2192 merged.",
+        "operationId": "get_timeline_api_contributions__user_id__timeline_get",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserContributionTimelineResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/contributions/{contribution_id}/validation": {
+      "patch": {
+        "tags": [
+          "Contributions"
+        ],
+        "summary": "Update contribution validation status",
+        "description": "Update contribution validation status (valid, pending, rejected, duplicate, invalid).\nTypically restricted to maintainers and organizers.",
+        "operationId": "moderate_validation_api_contributions__contribution_id__validation_patch",
+        "parameters": [
+          {
+            "name": "contribution_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Contribution Id"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContributionValidationUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContributionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/contributions/{contribution_id}/validate": {
+      "patch": {
+        "tags": [
+          "Contributions"
+        ],
+        "summary": "Update contribution validation status (alias)",
+        "description": "Update contribution validation status (valid, pending, rejected, duplicate, invalid).\nTypically restricted to maintainers and organizers.",
+        "operationId": "moderate_validation_api_contributions__contribution_id__validate_patch",
+        "parameters": [
+          {
+            "name": "contribution_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Contribution Id"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContributionValidationUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContributionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/contributions/{contribution_id}/status": {
+      "patch": {
+        "tags": [
+          "Contributions"
+        ],
+        "summary": "Transition contribution status",
+        "description": "Explicitly advance contribution status according to the valid state machine graph.",
+        "operationId": "transition_status_api_contributions__contribution_id__status_patch",
+        "parameters": [
+          {
+            "name": "contribution_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Contribution Id"
+            }
+          },
+          {
+            "name": "new_status",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "$ref": "#/components/schemas/ContributionStatus",
+              "description": "Target status in lifecycle state machine"
+            },
+            "description": "Target status in lifecycle state machine"
+          },
+          {
+            "name": "detail",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Optional transition note",
+              "title": "Detail"
+            },
+            "description": "Optional transition note"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ContributionResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dashboard/student": {
+      "get": {
+        "tags": [
+          "Dashboard"
+        ],
+        "summary": "Student dashboard overview",
+        "description": "Personalized student dashboard: active claimed issues, PR progress, and valid contribution count.",
+        "operationId": "student_dashboard_api_dashboard_student_get",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StudentDashboardResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dashboard/maintainer": {
+      "get": {
+        "tags": [
+          "Dashboard"
+        ],
+        "summary": "Maintainer review queue dashboard",
+        "description": "Maintainer dashboard: review queue of open PRs, pending reviews, and recent review activity.",
+        "operationId": "maintainer_dashboard_api_dashboard_maintainer_get",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MaintainerDashboardResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dashboard/repository/{repository_id}": {
+      "get": {
+        "tags": [
+          "Dashboard"
+        ],
+        "summary": "Repository statistics dashboard",
+        "description": "Repository-level dashboard: issue breakdown, PR counts, commit velocity, and contributor count.",
+        "operationId": "repository_dashboard_api_dashboard_repository__repository_id__get",
+        "parameters": [
+          {
+            "name": "repository_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Repository Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepositoryDashboardResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dashboard/admin": {
+      "get": {
+        "tags": [
+          "Dashboard"
+        ],
+        "summary": "Event-wide administration overview",
+        "description": "Executive event dashboard: student participant metrics, ERP verification rate, cross-repo summary, and moderation workload.",
+        "operationId": "admin_dashboard_api_dashboard_admin_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AdminDashboardResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/users/me": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Get own profile",
+        "description": "Retrieve the full profile for the authenticated student/maintainer/admin.",
+        "operationId": "get_my_profile_api_users_me_get",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserProfileResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Update own profile",
+        "description": "Update profile details (such as display name or linked GitHub username) for the authenticated user.",
+        "operationId": "update_my_profile_api_users_me_patch",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UserUpdateProfileRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserProfileResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/users/{user_id}": {
+      "get": {
+        "tags": [
+          "Users"
+        ],
+        "summary": "Get public profile",
+        "description": "Retrieve a public read-only contributor profile with contribution stats and recent open-source activity.",
+        "operationId": "get_public_profile_api_users__user_id__get",
+        "parameters": [
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "User Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UserPublicProfileResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/leaderboard": {
+      "get": {
+        "tags": [
+          "Engagement Layer"
+        ],
+        "summary": "Get participant leaderboard ranking",
+        "description": "Calculates contributor leaderboard using indexed PostgreSQL queries with weighted points and merged PR counts. No external data store required.",
+        "operationId": "get_leaderboard_api_leaderboard_get",
+        "parameters": [
+          {
+            "name": "repo_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter rankings by specific repository ID",
+              "title": "Repo Id"
+            },
+            "description": "Filter rankings by specific repository ID"
+          },
+          {
+            "name": "platform",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by repository platform ('web' or 'android')",
+              "title": "Platform"
+            },
+            "description": "Filter by repository platform ('web' or 'android')"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Page number",
+              "default": 1,
+              "title": "Page"
+            },
+            "description": "Page number"
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Items per page",
+              "default": 20,
+              "title": "Per Page"
+            },
+            "description": "Items per page"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LeaderboardResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/notifications": {
+      "get": {
+        "tags": [
+          "Engagement Layer"
+        ],
+        "summary": "Get notifications for current user",
+        "description": "Returns paginated notifications for the authenticated user, prioritized with unread messages first.",
+        "operationId": "get_user_notifications_api_notifications_get",
+        "parameters": [
+          {
+            "name": "unread_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Filter to only unread notifications",
+              "default": false,
+              "title": "Unread Only"
+            },
+            "description": "Filter to only unread notifications"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Max notifications to retrieve",
+              "default": 20,
+              "title": "Limit"
+            },
+            "description": "Max notifications to retrieve"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Offset for pagination",
+              "default": 0,
+              "title": "Offset"
+            },
+            "description": "Offset for pagination"
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/notifications/{notification_id}/read": {
+      "patch": {
+        "tags": [
+          "Engagement Layer"
+        ],
+        "summary": "Mark single notification as read",
+        "description": "Marks a specific notification as read. Verifies that the notification belongs to the current user.",
+        "operationId": "mark_notification_read_api_notifications__notification_id__read_patch",
+        "parameters": [
+          {
+            "name": "notification_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "description": "The notification ID to mark read",
+              "title": "Notification Id"
+            },
+            "description": "The notification ID to mark read"
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationMarkReadResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/notifications/read-all": {
+      "post": {
+        "tags": [
+          "Engagement Layer"
+        ],
+        "summary": "Mark all user notifications as read",
+        "description": "Marks all unread notifications for the authenticated user as read in a single batch operation.",
+        "operationId": "mark_all_notifications_read_api_notifications_read_all_post",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotificationReadAllResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/activity": {
+      "get": {
+        "tags": [
+          "Engagement Layer"
+        ],
+        "summary": "Get global activity event stream",
+        "description": "Returns a chronologically ordered real-time activity stream of claims, PR submissions, reviews, and merges across the platform.",
+        "operationId": "get_activity_feed_api_activity_get",
+        "parameters": [
+          {
+            "name": "type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by event type (e.g. 'claim_created', 'pr_opened', 'pr_merged', 'review_submitted')",
+              "title": "Type"
+            },
+            "description": "Filter by event type (e.g. 'claim_created', 'pr_opened', 'pr_merged', 'review_submitted')"
+          },
+          {
+            "name": "actor_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by user ID of the actor",
+              "title": "Actor Id"
+            },
+            "description": "Filter by user ID of the actor"
+          },
+          {
+            "name": "target_type",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by target type ('issue', 'pull_request', 'repository')",
+              "title": "Target Type"
+            },
+            "description": "Filter by target type ('issue', 'pull_request', 'repository')"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Max activities to retrieve",
+              "default": 20,
+              "title": "Limit"
+            },
+            "description": "Max activities to retrieve"
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "description": "Offset for pagination",
+              "default": 0,
+              "title": "Offset"
+            },
+            "description": "Offset for pagination"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ActivityFeedResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/search": {
+      "get": {
+        "tags": [
+          "Search"
+        ],
+        "summary": "Unified multi-entity global search",
+        "description": "Search across issues, pull requests, contributors, repositories, and commits with full-text query matching.",
+        "operationId": "global_search_api_search_get",
         "parameters": [
           {
             "name": "q",

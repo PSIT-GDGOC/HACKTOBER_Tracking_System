@@ -155,6 +155,7 @@ function ParticipantsTab() {
   const act = useMutation(api.verifyManual);
   const [flash, setFlash] = useState(null);
   const [rejecting, setRejecting] = useState(null);
+  const [previewStudent, setPreviewStudent] = useState(null);
   const [reason, setReason] = useState("");
 
   const items = (q.data || []).filter((s) => {
@@ -237,6 +238,9 @@ function ParticipantsTab() {
                 </div>
               </div>
               <div className="flex shrink-0 flex-wrap gap-2">
+                {s.id_card_image_url && (
+                  <Button size="sm" variant="paper" onClick={() => setPreviewStudent(s)}>🔍 View ID</Button>
+                )}
                 <Button size="sm" variant="green" loading={act.pending} onClick={() => run(s, "approve")}>✓ Approve</Button>
                 <Button size="sm" variant="red" onClick={() => setRejecting(s)}>✕ Reject</Button>
               </div>
@@ -254,6 +258,38 @@ function ParticipantsTab() {
             <div className="flex gap-2">
               <Button variant="red" loading={act.pending} onClick={() => run(rejecting, "reject", reason)}>Confirm rejection</Button>
               <Button variant="paper" onClick={() => setRejecting(null)}>Cancel</Button>
+            </div>
+          </div>
+        )}
+      </Modal>
+
+      <Modal open={!!previewStudent} onClose={() => setPreviewStudent(null)} title={previewStudent ? `ID Card — ${previewStudent.name} (${previewStudent.psit_roll_no})` : ""}>
+        {previewStudent && (
+          <div className="space-y-4">
+            <div className="flex justify-center border-[3px] border-ink bg-paper-2 p-2 shadow-[4px_4px_0_0_#101010]">
+              <img
+                src={api.idCardImageUrl(previewStudent.id)}
+                alt={`ID Card for ${previewStudent.name}`}
+                className="max-h-[380px] w-auto border-2 border-ink object-contain bg-white"
+                onError={(e) => {
+                  e.target.style.display = "none";
+                  const errEl = document.createElement("p");
+                  errEl.className = "p-6 font-mono text-xs text-gred font-bold text-center";
+                  errEl.innerText = "Unable to load ID card photo from storage.";
+                  e.target.parentElement.appendChild(errEl);
+                }}
+              />
+            </div>
+            <div className="flex items-center justify-between border-t-2 border-dashed border-paper-3 pt-3">
+              <span className="font-mono text-xs text-ink-soft">
+                Roll: <b className="text-ink">{previewStudent.psit_roll_no}</b>
+              </span>
+              <div className="flex gap-2">
+                <Button size="sm" variant="green" onClick={() => { const target = previewStudent; setPreviewStudent(null); run(target, "approve"); }}>
+                  ✓ Approve Student
+                </Button>
+                <Button size="sm" variant="paper" onClick={() => setPreviewStudent(null)}>Close</Button>
+              </div>
             </div>
           </div>
         )}

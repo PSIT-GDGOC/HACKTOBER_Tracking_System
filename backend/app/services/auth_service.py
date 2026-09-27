@@ -38,6 +38,7 @@ from app.config import settings
 from app.models import User, UserRole, VerificationMethod
 from app.services.qr_service import decode_qr_from_image, validate_psit_qr_token
 from app.services.psit_portal_service import fetch_psit_student_data
+from app.services.storage_service import save_id_card_image, get_id_card_image
 
 logger = logging.getLogger(__name__)
 
@@ -219,6 +220,11 @@ def authenticate_user(db: Session, identifier: str, password: Optional[str] = No
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid roll number or password."
             )
+    elif settings.ENV != "development" and user.role in (UserRole.ADMIN, UserRole.MAINTAINER):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Staff accounts require a password in production. Please set an account password."
+        )
 
     return user
 
@@ -293,9 +299,16 @@ async def process_id_card_verification(
             detail="Invalid image format. Please upload a clear JPEG or PNG photo of your PSIT ID card."
         )
 
-    # ── Step 2: Store private image path ─────────────────────────────
-    private_path = f"id-cards/{user.psit_roll_no}_{uuid.uuid4().hex[:8]}.jpg"
-    user.id_card_image_url = private_path
+    # ── Step 2: Persist uploaded ID card image bytes ─────────────────
+    try:
+        user.id_card_image_url = save_id_card_image(
+            user_id=user.id,
+            roll_no=user.psit_roll_no,
+            image_bytes=id_card_image_bytes,
+        )
+    except Exception as exc:
+        logger.warning("Failed to save ID card image to storage: %s", exc)
+        user.id_card_image_url = f"id-cards/{user.psit_roll_no}_{uuid.uuid4().hex[:8]}.jpg"
 
     # ── Step 3: Server-side QR decode ────────────────────────────────
     qr_token: Optional[str] = None

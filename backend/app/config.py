@@ -39,6 +39,12 @@ class Settings(BaseSettings):
     # Event Rules
     MAX_ACTIVE_CLAIMS_PER_STUDENT: int = 2
 
+    # Verification Media Storage (Supabase Storage / Local Uploads fallback)
+    STORAGE_DIR: str = "uploads"
+    SUPABASE_URL: str = ""
+    SUPABASE_SERVICE_ROLE_KEY: str = ""
+    SUPABASE_STORAGE_BUCKET: str = "id-cards"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -72,10 +78,12 @@ class Settings(BaseSettings):
 
     @property
     def allowed_origins_list(self) -> list:
-        """Parse ALLOWED_ORIGINS env var into a list for CORSMiddleware."""
-        if self.ALLOWED_ORIGINS == "*":
-            return ["*"]
-        return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(",")]
+        """Parse ALLOWED_ORIGINS env var into a list for CORSMiddleware.
+        Browsers reject wildcard '*' when allow_credentials=True. If '*' or empty,
+        return an empty list so allow_origin_regex dynamically matches localhost, Vercel, and Render."""
+        if not self.ALLOWED_ORIGINS or self.ALLOWED_ORIGINS.strip() == "*":
+            return []
+        return [origin.strip() for origin in self.ALLOWED_ORIGINS.split(",") if origin.strip() and origin.strip() != "*"]
 
 
 settings = Settings()

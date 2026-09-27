@@ -18,7 +18,7 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins_list,
-    allow_origin_regex=r"https://.*\.vercel\.app|http://localhost:\d+",
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1)(:\d+)?$|^https://.*\.vercel\.app$|^https://.*\.onrender\.com$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -65,7 +65,8 @@ def test_db():
         return {"db": "error", "error": str(e), "traceback": traceback.format_exc()}
 
 
-# Include Routers — mount both at root and under /api prefix for Vercel serverless rewrites
+# Include Routers — dual-mount on root and /api for Vercel reverse proxy and direct backend compatibility
+from fastapi import APIRouter
 from app.routers import auth, issues, webhooks, pull_requests, commits, contributions, dashboard, users, engagement, search
 
 all_routers = [
@@ -81,8 +82,14 @@ all_routers = [
     search.router,
 ]
 
-for router in all_routers:
-    app.include_router(router)
-    app.include_router(router, prefix="/api")
+# 1. Mount directly on root (e.g. /auth, /issues, /dashboard)
+for r in all_routers:
+    app.include_router(r)
 
+# 2. Mount under /api prefix for reverse proxy setups (e.g. /api/auth, /api/issues)
+api_router = APIRouter(prefix="/api")
+api_router.add_api_route("/health", health_check, methods=["GET"], tags=["System"], include_in_schema=False)
+for r in all_routers:
+    api_router.include_router(r)
+app.include_router(api_router)
 

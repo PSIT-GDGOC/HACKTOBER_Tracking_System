@@ -1,6 +1,6 @@
 import logging
 from datetime import datetime, timezone, timedelta
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 
@@ -10,10 +10,23 @@ from app.services.webhook_service import process_webhook_event
 logger = logging.getLogger(__name__)
 
 
-def create_webhook_job(db: Session, event_type: str, payload: Dict[str, Any]) -> WebhookJob:
-    """Insert incoming GitHub webhook event into Table #11 (webhook_jobs) with PENDING status."""
+def create_webhook_job(
+    db: Session,
+    event_type: str,
+    payload: Dict[str, Any],
+    delivery_id: Optional[str] = None
+) -> Tuple[WebhookJob, bool]:
+    """Insert incoming GitHub webhook event into Table #11 (webhook_jobs) with PENDING status.
+    Returns (job, is_new). If delivery_id already exists, skips duplicate insertion and returns (existing_job, False)."""
+    if delivery_id:
+        existing = db.query(WebhookJob).filter(WebhookJob.delivery_id == delivery_id).first()
+        if existing:
+            logger.info("Webhook delivery '%s' already recorded (job #%s). Skipping duplicate.", delivery_id, existing.id)
+            return existing, False
+
     now = datetime.now(timezone.utc)
     job = WebhookJob(
+        delivery_id=delivery_id,
         event_type=event_type,
         payload_json=payload,
         status=WebhookJobStatus.PENDING,
@@ -23,7 +36,7 @@ def create_webhook_job(db: Session, event_type: str, payload: Dict[str, Any]) ->
     db.add(job)
     db.commit()
     db.refresh(job)
-    return job
+    return job, True
 
 
 def execute_webhook_job(job: WebhookJob, db: Session) -> Dict[str, Any]:

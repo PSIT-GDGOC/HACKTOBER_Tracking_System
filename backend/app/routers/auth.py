@@ -15,7 +15,7 @@ import base64
 from typing import List, Optional
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -49,6 +49,7 @@ from app.services.auth_service import (
     review_manual_verification,
     set_user_password,
 )
+from app.services.storage_service import get_id_card_image
 
 router = APIRouter(prefix="/auth", tags=["Auth & Verification"])
 
@@ -242,6 +243,48 @@ def manual_verify_student(
         reason=payload.reason,
     )
     return updated_student
+
+
+@router.get(
+    "/id-card-image/{student_id}",
+    summary="Admin-only: Retrieve uploaded ID card photo for manual review",
+    dependencies=[Depends(require_roles(UserRole.ADMIN))],
+)
+def get_student_id_card_image(
+    student_id: int,
+    db: Session = Depends(get_db),
+):
+    """
+    Admin-only: securely serves the stored ID card photo for a student in the
+    manual verification queue without exposing raw storage keys or PII publicly.
+    """
+    student = db.query(User).filter(User.id == student_id).first()
+    if not student:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Student with ID {student_id} not found."
+        )
+    if not student.id_card_image_url:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No ID card image has been uploaded for this student."
+        )
+
+    image_bytes = get_id_card_image(student.id_card_image_url)
+    if not image_bytes:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="ID card image file not found in storage."
+        )
+
+    return Response(
+        content=image_bytes,
+        media_type="image/jpeg",
+        headers={
+            "Content-Disposition": f"inline; filename={student.psit_roll_no}_id_card.jpg",
+            "Cache-Control": "private, no-cache, no-store, must-revalidate",
+        }
+    )
 
 
 # ──────────────────────────────────────────────────────────────────────

@@ -30,8 +30,15 @@ export function AuthProvider({ children }) {
       .then((u) => {
         if (alive) setUser(u);
       })
-      .catch(() => {
-        tokenStore.clear();
+      .catch((err) => {
+        // BUG-07: Only wipe token if backend explicitly rejected credentials with 401.
+        // Transient network failures, Render/Vercel cold starts, and 502/503 errors
+        // preserve the stored token so users are not kicked out.
+        if (err?.status === 401) {
+          tokenStore.clear();
+        } else {
+          console.warn("Session restore transient error:", err);
+        }
       })
       .finally(() => {
         if (alive) setBootstrapping(false);

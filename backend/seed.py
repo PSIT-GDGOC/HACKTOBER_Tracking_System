@@ -14,6 +14,7 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8")
 from sqlalchemy.exc import OperationalError
 from app.db import SessionLocal, engine, Base
+from app.services.auth_service import hash_password
 from app.models import (
     User, UserRole, VerificationMethod,
     Repository, PlatformType,
@@ -64,6 +65,7 @@ def seed_database():
             verified_at=datetime.now(timezone.utc),
             github_username="aarav-sharma-psit",
             github_id="gh_123456",
+            password_hash=hash_password("Student@123"),
             role=UserRole.STUDENT,
         )
         maintainer = User(
@@ -75,6 +77,7 @@ def seed_database():
             verified_at=datetime.now(timezone.utc),
             github_username="aditya-verma-lead",
             github_id="gh_234567",
+            password_hash=hash_password("Maintainer@123"),
             role=UserRole.MAINTAINER,
         )
         admin = User(
@@ -86,6 +89,7 @@ def seed_database():
             verified_at=datetime.now(timezone.utc),
             github_username="abu-ansari",
             github_id="gh_345678",
+            password_hash=hash_password("Admin@123"),
             role=UserRole.ADMIN,
         )
         db.add_all([student, maintainer, admin])

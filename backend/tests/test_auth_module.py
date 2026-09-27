@@ -677,3 +677,71 @@ def test_stale_token_after_db_wipe_does_not_leak_other_user(client_and_db):
     assert res2.status_code == 401, f"Expected 401 for colliding ID with mismatched roll_no, got {res2.status_code}: {res2.text}"
 
 
+def test_id_card_image_persistence_and_admin_endpoint(client_and_db, tmp_path, monkeypatch):
+    """
+    BUG-08 regression test: Verify uploaded ID card image bytes are persisted
+    and accessible to administrators via GET /auth/id-card-image/{student_id}.
+    """
+    client, db = client_and_db
+    monkeypatch.setattr(settings, "STORAGE_DIR", str(tmp_path))
+
+    # Create admin and student
+    admin = User(
+        name="Admin Reviewer",
+        email="admin_reviewer@psit.ac.in",
+        psit_roll_no="2100ADMIN00001",
+        role=UserRole.ADMIN,
+        verified=True,
+    )
+    student = User(
+        name="Test Upload Student",
+        email="test_student@psit.ac.in",
+        psit_roll_no="2200320100999",
+        role=UserRole.STUDENT,
+        verified=False,
+    )
+    db.add_all([admin, student])
+    db.commit()
+    db.refresh(admin)
+    db.refresh(student)
+
+    admin_token = create_access_token({"sub": str(admin.id), "roll_no": admin.psit_roll_no, "role": "admin"})
+    student_token = create_access_token({"sub": str(student.id), "roll_no": student.psit_roll_no, "role": "student"})
+
+    # Student uploads an ID card image
+    image_b64 = _create_dummy_image_b64()
+    with patch("app.services.auth_service.decode_qr_from_image", return_value="abcdef1234567890abcdef1234567890"):
+        res = client.post(
+            "/auth/verify-id",
+            json={
+                "psit_roll_no": student.psit_roll_no,
+                "id_card_image_base64": image_b64,
+            },
+            headers={"Authorization": f"Bearer {student_token}"},
+        )
+    assert res.status_code == 200
+
+    # Verify student has id_card_image_url set and file exists on disk
+    db.expire_all()
+    updated_student = db.query(User).filter(User.id == student.id).first()
+    assert updated_student.id_card_image_url is not None
+    saved_file = tmp_path / updated_student.id_card_image_url
+    assert saved_file.is_file()
+
+    # Non-admin request to view ID card image is blocked (403)
+    res_student = client.get(
+        f"/auth/id-card-image/{student.id}",
+        headers={"Authorization": f"Bearer {student_token}"},
+    )
+    assert res_student.status_code == 403
+
+    # Admin request to view ID card image succeeds with image/jpeg media
+    res_admin = client.get(
+        f"/auth/id-card-image/{student.id}",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert res_admin.status_code == 200
+    assert res_admin.headers["content-type"] == "image/jpeg"
+    assert len(res_admin.content) > 0
+
+
