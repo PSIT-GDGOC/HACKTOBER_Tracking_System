@@ -23,10 +23,18 @@ def get_current_user(
         try:
             payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
             user_id = payload.get("sub")
+            roll_no = payload.get("roll_no")
             if user_id:
-                user = db.query(User).filter(User.id == int(user_id)).first()
+                query = db.query(User).filter(User.id == int(user_id))
+                if roll_no:
+                    query = query.filter(User.psit_roll_no == roll_no)
+                user = query.first()
                 if user:
                     return user
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User not found or session invalid."
+            )
         except jwt.PyJWTError:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -38,11 +46,16 @@ def get_current_user(
         user = db.query(User).filter(User.id == x_user_id).first()
         if user:
             return user
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="User not found."
+        )
 
-    # 3. Fallback to first verified student if no auth header in local dev
-    default_user = db.query(User).filter(User.role == UserRole.STUDENT).first()
-    if default_user:
-        return default_user
+    # 3. Fallback to first verified student ONLY in local dev debug mode when no auth header is sent
+    if settings.DEBUG and settings.ENV == "development":
+        default_user = db.query(User).filter(User.role == UserRole.STUDENT).first()
+        if default_user:
+            return default_user
 
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,

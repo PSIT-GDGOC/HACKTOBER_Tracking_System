@@ -632,3 +632,48 @@ def test_github_link_validates_existence(client_and_db):
     assert res_200.json()["github_username"] == "real-dev"
     assert res_200.json()["github_id"] == "54321"
 
+
+def test_stale_token_after_db_wipe_does_not_leak_other_user(client_and_db):
+    """
+    Regression test:
+    When the database is cleared/wiped, an existing client may still hold a valid JWT.
+    Verify that:
+    1. A token referencing a non-existent user_id returns 401 (never falls back to default user).
+    2. A token with an ID collision (same integer ID 1, but different roll number from wiped DB)
+       returns 401 rather than returning the newly registered user.
+    """
+    client, db = client_and_db
+
+    # User B exists in the current database
+    user_b = User(
+        name="User B (New)",
+        email="user_b@psit.ac.in",
+        psit_roll_no="2300970100099",
+        role=UserRole.STUDENT,
+        verified=True,
+    )
+    db.add(user_b)
+    db.commit()
+    db.refresh(user_b)
+
+    # 1. Stale token for User A with ID that doesn't exist anymore (e.g., 9999)
+    stale_token_deleted_user = create_access_token({
+        "sub": "9999",
+        "roll_no": "2200970100001",
+        "role": "student",
+        "verified": True,
+    })
+    res1 = client.get("/auth/me", headers={"Authorization": f"Bearer {stale_token_deleted_user}"})
+    assert res1.status_code == 401, f"Expected 401 for deleted user, got {res1.status_code}: {res1.text}"
+
+    # 2. Stale token for User A with ID collision (sub: user_b.id, but roll_no from old User A)
+    stale_token_id_collision = create_access_token({
+        "sub": str(user_b.id),
+        "roll_no": "2200970100001",  # User A's old roll number
+        "role": "student",
+        "verified": True,
+    })
+    res2 = client.get("/auth/me", headers={"Authorization": f"Bearer {stale_token_id_collision}"})
+    assert res2.status_code == 401, f"Expected 401 for colliding ID with mismatched roll_no, got {res2.status_code}: {res2.text}"
+
+
