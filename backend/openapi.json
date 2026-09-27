@@ -106,6 +106,26 @@
         }
       }
     },
+    "/test-db": {
+      "get": {
+        "tags": [
+          "System"
+        ],
+        "summary": "Test Db",
+        "description": "Diagnostic endpoint to inspect DB connection status on serverless.",
+        "operationId": "test_db_test_db_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
     "/auth/signup": {
       "post": {
         "tags": [

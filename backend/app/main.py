@@ -50,6 +50,7 @@ def health_check():
     }
 
 
+@app.get("/test-db", tags=["System"])
 @app.get("/api/test-db", tags=["System"])
 def test_db():
     """Diagnostic endpoint to inspect DB connection status on serverless."""
@@ -66,8 +67,18 @@ def test_db():
 
 
 # Include Routers — dual-mount on root and /api for Vercel reverse proxy and direct backend compatibility
-from fastapi import APIRouter
-from app.routers import auth, issues, webhooks, pull_requests, commits, contributions, dashboard, users, engagement, search
+from app.routers import (
+    auth,
+    issues,
+    webhooks,
+    pull_requests,
+    commits,
+    contributions,
+    dashboard,
+    users,
+    engagement,
+    search,
+)
 
 all_routers = [
     auth.router,
@@ -87,9 +98,5 @@ for r in all_routers:
     app.include_router(r)
 
 # 2. Mount under /api prefix for reverse proxy setups (e.g. /api/auth, /api/issues)
-api_router = APIRouter(prefix="/api")
-api_router.add_api_route("/health", health_check, methods=["GET"], tags=["System"], include_in_schema=False)
 for r in all_routers:
-    api_router.include_router(r)
-app.include_router(api_router)
-
+    app.include_router(r, prefix="/api")
