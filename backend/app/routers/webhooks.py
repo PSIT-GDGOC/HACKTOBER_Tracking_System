@@ -60,6 +60,17 @@ async def github_webhook_receiver(
 
     action = payload.get("action")
 
+    # ── Ping event (sent by GitHub when creating or testing webhooks) ─────────
+    if x_github_event == "ping":
+        zen = payload.get("zen", "pong")
+        return WebhookResponse(
+            status="success",
+            event="ping",
+            action="ping",
+            detail=f"GitHub ping acknowledged: {zen}",
+            data={"zen": zen}
+        )
+
     # ── Org webhook: new repository created ───────────────────────────────────
     # When a new repo is created in the PSIT-GDGOC org, GitHub fires:
     #   X-GitHub-Event: repository  +  action: created
