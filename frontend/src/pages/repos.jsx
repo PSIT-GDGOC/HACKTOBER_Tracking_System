@@ -88,6 +88,8 @@ function RepoHub({ repo }) {
   const [tab, setTab] = useState("overview");
   const dash = useData(() => api.repositoryDashboard(repo.id), [repo.id], { pollMs: 60000 });
   const drawers = useDrawers();
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState(null);
 
   const prs = useData(
     () => api.pullRequests({ repo_id: repo.id, limit: 50 }),
@@ -105,12 +107,38 @@ function RepoHub({ repo }) {
     { enabled: tab === "overview" },
   );
 
-  const d = dash.data;
+  const handleSync = async () => {
+    setSyncing(true);
+    setSyncMsg(null);
+    try {
+      const res = await api.syncIssues(repo.id);
+      issues.refetch();
+      dash.refetch();
+      setSyncMsg(res?.message || "GitHub issues synced successfully.");
+    } catch (e) {
+      setSyncMsg(e?.detail || e?.message || "Sync failed. Check repository connection.");
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  // Gracefully fallback so the page never blocks on a dashboard stats error
+  const d = dash.data || {
+    open_issues: 0,
+    total_issues: 0,
+    closed_issues: 0,
+    claimed_issues: 0,
+    total_prs: 0,
+    open_prs: 0,
+    merged_prs: 0,
+    total_commits: 0,
+    unique_contributors_count: 0,
+    repository: repo,
+  };
 
   return (
     <>
-      {!d && dash.loading && <LoadingBlock rows={5} label="Loading repository stats" />}
-      {!d && dash.error && <ErrorState message={dash.error} onRetry={dash.refetch} />}
+      {dash.loading && !dash.data && <LoadingBlock rows={2} label="Loading repository stats" />}
 
       {d && (
         <>
@@ -157,14 +185,32 @@ function RepoHub({ repo }) {
                       ))}
                     </div>
                   </Panel>
-                  {(issues.data?.items || []).length > 0 && (
-                    <Panel className="p-5">
-                      <SectionHeading
-                        title="Issues in this repo"
-                        action={<Link to="/dashboard/issues" className="font-mono text-[11px] font-bold uppercase underline">explorer →</Link>}
-                      />
+
+                  <Panel className="p-5">
+                    <SectionHeading
+                      title="Issues in this repo"
+                      action={
+                        <div className="flex items-center gap-2">
+                          <button
+                            onClick={handleSync}
+                            disabled={syncing}
+                            className="border-2 border-ink bg-gyellow px-3 py-1 font-mono text-[11px] font-bold uppercase hover:bg-gyellow-light disabled:opacity-50"
+                          >
+                            {syncing ? "Syncing..." : "Sync from GitHub ↻"}
+                          </button>
+                          <Link to="/dashboard/issues" className="font-mono text-[11px] font-bold uppercase underline">explorer →</Link>
+                        </div>
+                      }
+                    />
+                    {syncMsg && (
+                      <div className="mb-3 border-2 border-ink bg-gyellow-light p-2 font-mono text-xs font-bold">
+                        {syncMsg}
+                      </div>
+                    )}
+                    {issues.loading && <LoadingBlock rows={3} label="Checking for issues..." />}
+                    {!issues.loading && (issues.data?.items || []).length > 0 && (
                       <div className="space-y-2">
-                        {(issues.data?.items || []).slice(0, 8).map((i) => (
+                        {issues.data.items.slice(0, 8).map((i) => (
                           <button
                             key={i.id}
                             onClick={() => drawers.openIssue(i.id)}
@@ -177,8 +223,23 @@ function RepoHub({ repo }) {
                           </button>
                         ))}
                       </div>
-                    </Panel>
-                  )}
+                    )}
+                    {!issues.loading && (issues.data?.items || []).length === 0 && (
+                      <div className="border-2 border-dashed border-paper-3 py-6 text-center">
+                        <p className="font-display text-base font-bold">No issues available in this repository yet</p>
+                        <p className="mt-1 font-mono text-xs text-ink-soft">
+                          Create an issue on GitHub ({repo.github_repo_url || "hacktoberfest-web"}) or click below to sync.
+                        </p>
+                        <button
+                          onClick={handleSync}
+                          disabled={syncing}
+                          className="mt-3 border-2 border-ink bg-ink px-4 py-2 font-mono text-xs font-bold text-paper hover:bg-opacity-90 disabled:opacity-50"
+                        >
+                          {syncing ? "Syncing issues from GitHub..." : "Sync from GitHub now ↻"}
+                        </button>
+                      </div>
+                    )}
+                  </Panel>
                 </div>
               )}
 

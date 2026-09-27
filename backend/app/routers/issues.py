@@ -21,7 +21,25 @@ router = APIRouter(prefix="/issues", tags=["Issues"])
 @router.get("/repositories", response_model=List[RepositoryBrief], summary="List registered repositories")
 def list_repositories(db: Session = Depends(get_db)):
     """Return all registered official repositories."""
-    return db.query(Repository).all()
+    repos = db.query(Repository).all()
+    if not repos:
+        from app.models import PlatformType
+        r1 = Repository(
+            name="hacktoberfest-web",
+            github_repo_url="https://github.com/PSIT-GDGOC/hacktoberfest-web",
+            platform=PlatformType.WEB,
+        )
+        r2 = Repository(
+            name="hacktoberfest-android",
+            github_repo_url="https://github.com/gdgoc-psit/hacktoberfest-android",
+            platform=PlatformType.ANDROID,
+        )
+        db.add_all([r1, r2])
+        db.commit()
+        db.refresh(r1)
+        db.refresh(r2)
+        repos = [r1, r2]
+    return repos
 
 
 @router.post("/sync", response_model=IssueSyncResponse, summary="Sync issues from GitHub")

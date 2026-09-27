@@ -139,6 +139,8 @@ export const api = {
 
   /* ---- issues (Abu's module) ---- */
   repositories: () => request("/issues/repositories"),
+  syncIssues: (repoId) =>
+    request(`/issues/sync${qs({ repo_id: repoId })}`, { method: "POST" }),
   issues: (params = {}) =>
     request(`/issues${qs({ skip: 0, limit: 50, ...params })}`),
   issue: (id) => request(`/issues/${id}`),
@@ -205,8 +207,8 @@ export async function discoverRepositories() {
     if (Array.isArray(list) && list.length > 0) return list;
   } catch {}
   return [
-    { id: 1, name: "hacktoberfest-web", platform: "web" },
-    { id: 2, name: "hacktoberfest-android", platform: "android" },
+    { id: 1, name: "hacktoberfest-web", platform: "web", github_repo_url: "https://github.com/PSIT-GDGOC/hacktoberfest-web" },
+    { id: 2, name: "hacktoberfest-android", platform: "android", github_repo_url: "https://github.com/gdgoc-psit/hacktoberfest-android" },
   ];
 }
 

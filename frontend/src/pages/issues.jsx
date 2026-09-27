@@ -195,12 +195,27 @@ export default function IssueExplorer() {
       {q.error && <ErrorState message={q.error} onRetry={q.refetch} />}
       {data && items.length === 0 && (
         <EmptyState
-          title="No issues match those filters"
-          body="Try widening the difficulty or clearing the search — new issues land every week during the sprint."
+          title={total === 0 ? "No issues available yet" : "No issues match those filters"}
+          body={
+            total === 0
+              ? "There are currently no open issues in the repository. Issues created on GitHub (https://github.com/PSIT-GDGOC/hacktoberfest-web) will appear here automatically."
+              : "Try widening the difficulty or clearing the search — new issues land every week during the sprint."
+          }
           action={
-            <Button variant="paper" onClick={() => { setParams(new URLSearchParams(), { replace: true }); setFilters({ repo_id: "", difficulty: "", category: "", tech_tag: "", status: "", search: "", skip: 0 }); }}>
-              Clear all filters
-            </Button>
+            total === 0 ? (
+              <a
+                href="https://github.com/PSIT-GDGOC/hacktoberfest-web/issues"
+                target="_blank"
+                rel="noreferrer"
+                className="border-2 border-ink bg-ink px-4 py-2 font-mono text-xs font-bold text-paper hover:bg-opacity-90 inline-block"
+              >
+                Open GitHub Issues ↗
+              </a>
+            ) : (
+              <Button variant="paper" onClick={() => { setParams(new URLSearchParams(), { replace: true }); setFilters({ repo_id: "", difficulty: "", category: "", tech_tag: "", status: "", search: "", skip: 0 }); }}>
+                Clear all filters
+              </Button>
+            )
           }
         />
       )}
