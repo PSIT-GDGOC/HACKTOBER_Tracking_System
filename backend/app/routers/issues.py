@@ -22,25 +22,13 @@ router = APIRouter(prefix="/issues", tags=["Issues"])
 
 @router.get("/repositories", response_model=List[RepositoryBrief], summary="List registered repositories")
 def list_repositories(db: Session = Depends(get_db)):
-    """Return all registered official repositories."""
+    """Return all registered official repositories.
+
+    Repos are auto-synced from the PSIT-GDGOC GitHub org on startup and
+    every 5 minutes in the background. This endpoint simply reads what's
+    already in the DB — no GitHub API calls at request time.
+    """
     repos = db.query(Repository).all()
-    if not repos:
-        from app.models import PlatformType
-        r1 = Repository(
-            name="hacktoberfest-web",
-            github_repo_url="https://github.com/PSIT-GDGOC/hacktoberfest-web",
-            platform=PlatformType.WEB,
-        )
-        r2 = Repository(
-            name="hacktoberfest-android",
-            github_repo_url="https://github.com/gdgoc-psit/hacktoberfest-android",
-            platform=PlatformType.ANDROID,
-        )
-        db.add_all([r1, r2])
-        db.commit()
-        db.refresh(r1)
-        db.refresh(r2)
-        repos = [r1, r2]
     return repos
 
 
@@ -80,8 +68,14 @@ def sync_issues(
     Backfill / sync issues from GitHub REST API for registered official repositories.
     Parses labels to automatically classify difficulty, category, and tech tags.
     """
-    result = sync_issues_from_github(db=db, repo_id=repo_id)
-    return result
+    import logging
+    logger = logging.getLogger(__name__)
+    try:
+        result = sync_issues_from_github(db=db, repo_id=repo_id)
+        return result
+    except Exception as exc:
+        logger.exception("Issue sync failed: %s", exc)
+        raise
 
 
 @router.get("", response_model=IssueListResponse, summary="List issues with filters")

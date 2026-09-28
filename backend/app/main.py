@@ -1,3 +1,7 @@
+import asyncio
+import logging
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
@@ -6,12 +10,91 @@ from app.logging_config import configure_logging
 # Apply sensitive-data log filter globally before anything else can log
 configure_logging()
 
+logger = logging.getLogger(__name__)
+
+# ─── Org Repo Sync Background Task ────────────────────────────────────────────
+ORG_SYNC_INTERVAL_SECONDS = 300  # re-sync every 5 minutes
+
+
+async def _org_sync_loop():
+    """Background loop: syncs PSIT-GDGOC org repos every 5 minutes."""
+    from app.db import SessionLocal
+    from app.services.org_sync_service import sync_org_repos
+
+    await asyncio.sleep(10)  # small delay after startup so DB is ready
+    while True:
+        try:
+            db = SessionLocal()
+            result = await sync_org_repos(db)
+            logger.info("OrgSync background: %s", result)
+        except Exception as e:
+            logger.error("OrgSync background error: %s", e)
+        finally:
+            try:
+                db.close()
+            except Exception:
+                pass
+        await asyncio.sleep(ORG_SYNC_INTERVAL_SECONDS)
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """App lifespan: run startup org sync then launch periodic background sync."""
+    from app.db import SessionLocal
+    from app.services.org_sync_service import sync_org_repos
+
+    # ── Startup: self-heal DB schema (BIGINT columns, delivery_id) ────────────
+    from app.db import engine
+    from sqlalchemy import text
+    try:
+        if engine.dialect.name == "postgresql":
+            logger.info("Startup DB check: ensuring BigInteger columns on PostgreSQL...")
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE issues ALTER COLUMN github_issue_id TYPE BIGINT;"))
+                conn.execute(text("ALTER TABLE pull_requests ALTER COLUMN github_pr_id TYPE BIGINT;"))
+                conn.execute(text("ALTER TABLE webhook_jobs ADD COLUMN IF NOT EXISTS delivery_id VARCHAR(100);"))
+                conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_webhook_jobs_delivery_id ON webhook_jobs (delivery_id);"))
+                conn.commit()
+                logger.info("Startup DB check: Schema auto-migrations applied successfully.")
+    except Exception as e:
+        logger.warning("Startup DB check (non-fatal): %s", e)
+
+    # ── Startup: immediate one-shot sync ──────────────────────────────────────
+    logger.info("Startup: Running initial PSIT-GDGOC org repo sync...")
+    try:
+        db = SessionLocal()
+        result = await sync_org_repos(db)
+        logger.info("Startup OrgSync complete: %s", result)
+    except Exception as e:
+        logger.error("Startup OrgSync failed (non-fatal): %s", e)
+    finally:
+        try:
+            db.close()
+        except Exception:
+            pass
+
+    # ── Launch periodic background sync ───────────────────────────────────────
+    sync_task = asyncio.create_task(_org_sync_loop())
+    logger.info("OrgSync background task started (interval: %ds)", ORG_SYNC_INTERVAL_SECONDS)
+
+    yield  # app is running
+
+    # ── Shutdown: cancel background task ──────────────────────────────────────
+    sync_task.cancel()
+    try:
+        await sync_task
+    except asyncio.CancelledError:
+        pass
+    logger.info("OrgSync background task stopped.")
+
+
 app = FastAPI(
     title=settings.APP_NAME,
     version="1.0.0",
     description="Event-management API for GDGOC Hacktoberfest open-source contribution tracking.",
     docs_url="/docs",
-    redoc_url="/redoc"
+    redoc_url="/redoc",
+    lifespan=lifespan,
 )
 
 # CORS configuration — set ALLOWED_ORIGINS env var in production (comma-separated URLs)
@@ -68,6 +151,7 @@ def test_db():
 
 # Include Routers — dual-mount on root and /api for Vercel reverse proxy and direct backend compatibility
 from app.routers import (
+    admin,
     auth,
     issues,
     webhooks,
@@ -81,6 +165,7 @@ from app.routers import (
 )
 
 all_routers = [
+    admin.router,
     auth.router,
     issues.router,
     webhooks.router,

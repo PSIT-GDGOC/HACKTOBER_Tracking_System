@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     # GitHub Integration
     GITHUB_ACCESS_TOKEN: str = ""
     GITHUB_WEBHOOK_SECRET: str = ""
+    GITHUB_ORG: str = "PSIT-GDGOC"  # GitHub org to auto-sync repos from
     GITHUB_WEB_REPO_URL: str = "https://github.com/PSIT-GDGOC/hacktoberfest-web"
     GITHUB_ANDROID_REPO_URL: str = "https://github.com/gdgoc-psit/hacktoberfest-android"
     # GitHub OAuth (student GitHub account linking)

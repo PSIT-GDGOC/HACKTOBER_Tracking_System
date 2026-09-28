@@ -135,11 +135,9 @@ export default function IssueExplorer() {
       },
       options: [
         { value: "all", label: "Any repo" },
-        { value: "web", label: "🌐 Web App" },
-        { value: "android", label: "📱 Phone App (Android)" },
-        ...repos
-          .filter((r) => r.platform !== "web" && r.platform !== "android")
-          .map((r) => ({ value: String(r.id), label: r.name })),
+        { value: "web", label: "🌐 All Web Apps" },
+        { value: "android", label: "📱 All Android Apps" },
+        ...repos.map((r) => ({ value: String(r.id), label: `${r.name}` })),
       ],
     },
     {

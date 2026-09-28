@@ -179,10 +179,22 @@ def process_webhook_event(event_type: str, payload: Dict[str, Any], db: Session)
         if not repo:
             repo = db.query(Repository).filter(Repository.name == repo_data.get("name")).first()
 
+<<<<<<< HEAD
     if event_type == "repository":
         return _handle_repository_event(payload, db)
     elif event_type == "issues":
         return _handle_issues_event(payload, repo or _get_or_create_repo_from_payload(payload, db), db)
+=======
+    if not repo and repo_data.get("name"):
+        try:
+            from app.services.org_sync_service import sync_single_repo_from_webhook
+            repo = sync_single_repo_from_webhook(db=db, repo_data=repo_data)
+        except Exception as e:
+            logger.warning("Could not auto-create repo for webhook event: %s", e)
+
+    if event_type == "issues":
+        return _handle_issues_event(payload, repo, db)
+>>>>>>> 7243b73ca8c422da211b2126d3986632dffb6792
     elif event_type == "pull_request":
         return _handle_pull_request_event(payload, repo or _get_or_create_repo_from_payload(payload, db), db)
     elif event_type == "push":
@@ -207,7 +219,11 @@ def _handle_issues_event(payload: Dict[str, Any], repo: Optional[Repository], db
 
     issue = db.query(Issue).filter(Issue.github_issue_id == gh_issue_id).first()
 
+<<<<<<< HEAD
     if action == "deleted" and issue:
+=======
+    if issue and action == "deleted":
+>>>>>>> 7243b73ca8c422da211b2126d3986632dffb6792
         db.delete(issue)
         db.commit()
         return {"status": "success", "event": "issues", "action": action, "detail": f"Issue #{gh_issue_id} deleted."}
@@ -215,7 +231,32 @@ def _handle_issues_event(payload: Dict[str, Any], repo: Optional[Repository], db
     label_names = [lbl["name"] for lbl in issue_data.get("labels", []) if isinstance(lbl, dict) and "name" in lbl]
     difficulty, category, tech_tags = _infer_issue_metadata(label_names)
 
-    if not issue and repo:
+    # If repo wasn't matched upstream, attempt to find or auto-create it now
+    if not repo:
+        repo_data = payload.get("repository", {})
+        repo_name = repo_data.get("name")
+        if repo_name:
+            repo = db.query(Repository).filter(Repository.name == repo_name).first()
+            if not repo:
+                try:
+                    from app.services.org_sync_service import sync_single_repo_from_webhook
+                    repo = sync_single_repo_from_webhook(db=db, repo_data=repo_data)
+                except Exception as e:
+                    logger.warning("Error auto-creating repo for issue webhook: %s", e)
+
+    if not repo:
+        logger.error(
+            "Cannot process issue #%s: Repository '%s' could not be resolved or created in DB",
+            gh_issue_id, payload.get("repository", {}).get("name")
+        )
+        return {
+            "status": "error",
+            "event": "issues",
+            "action": action,
+            "detail": f"Repository '{payload.get('repository', {}).get('name')}' not registered in platform DB."
+        }
+
+    if not issue:
         issue = Issue(
             repo_id=repo.id,
             github_issue_id=gh_issue_id,
