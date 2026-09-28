@@ -62,11 +62,106 @@ def verify_github_signature(raw_body: bytes, signature_header: Optional[str]) ->
     return True
 
 
+def _get_or_create_repo_from_payload(payload: Dict[str, Any], db: Session) -> Optional[Repository]:
+    """Dynamically get or create a Repository from webhook payload."""
+    repo_data = payload.get("repository")
+    if not repo_data or not isinstance(repo_data, dict):
+        return None
+
+    repo_url = repo_data.get("html_url") or repo_data.get("url")
+    repo_name = repo_data.get("name")
+    if not repo_name and not repo_url:
+        return None
+
+    if not repo_name and repo_url:
+        repo_name = repo_url.rstrip("/").split("/")[-1]
+    if not repo_url and repo_name:
+        repo_url = f"https://github.com/PSIT-GDGOC/{repo_name}"
+
+    repo = None
+    if repo_url:
+        repo = db.query(Repository).filter(Repository.github_repo_url.ilike(repo_url)).first()
+        if not repo and repo_name:
+            repo = db.query(Repository).filter(Repository.github_repo_url.ilike(f"%{repo_name}%")).first()
+    if not repo and repo_name:
+        repo = db.query(Repository).filter(Repository.name.ilike(repo_name)).first()
+
+    if not repo:
+        from app.models import PlatformType
+        lower_name = (repo_name or "").lower()
+        lower_url = (repo_url or "").lower()
+        platform = PlatformType.ANDROID if ("android" in lower_name or "android" in lower_url) else PlatformType.WEB
+        
+        repo = Repository(
+            name=repo_name,
+            github_repo_url=repo_url,
+            platform=platform
+        )
+        db.add(repo)
+        try:
+            db.commit()
+            db.refresh(repo)
+            logger.info(f"Auto-registered new repository from webhook: {repo_name} ({repo_url})")
+        except Exception as e:
+            db.rollback()
+            logger.warning(f"Failed to auto-create repository '{repo_name}': {e}")
+            repo = db.query(Repository).filter(Repository.name == repo_name).first()
+
+    return repo
+
+
+def _handle_repository_event(payload: Dict[str, Any], db: Session) -> Dict[str, Any]:
+    """Handle repository lifecycle webhook events (created, deleted, edited, publicized, privatized, archived)."""
+    action = payload.get("action")
+    repo_data = payload.get("repository", {})
+    repo_name = repo_data.get("name")
+    repo_url = repo_data.get("html_url") or repo_data.get("url")
+
+    if not repo_name and not repo_url:
+        return {"status": "error", "event": "repository", "action": action, "detail": "Missing repository data in payload."}
+
+    if action in ["created", "publicized", "renamed", "edited", "unarchived", "transferred"]:
+        repo = _get_or_create_repo_from_payload(payload, db)
+        if repo:
+            if repo_name and repo.name != repo_name:
+                repo.name = repo_name
+            if repo_url and repo.github_repo_url != repo_url:
+                repo.github_repo_url = repo_url
+            db.commit()
+            return {
+                "status": "success",
+                "event": "repository",
+                "action": action,
+                "detail": f"Repository '{repo.name}' synchronized (ID: {repo.id})."
+            }
+    elif action in ["deleted", "privatized", "archived"]:
+        repo = None
+        if repo_url:
+            repo = db.query(Repository).filter(Repository.github_repo_url.ilike(repo_url)).first()
+        if not repo and repo_name:
+            repo = db.query(Repository).filter(Repository.name.ilike(repo_name)).first()
+
+        if repo:
+            deleted_id = repo.id
+            deleted_name = repo.name
+            db.delete(repo)
+            db.commit()
+            return {
+                "status": "success",
+                "event": "repository",
+                "action": action,
+                "detail": f"Repository '{deleted_name}' (ID: {deleted_id}) removed from system due to GitHub event '{action}'."
+            }
+
+    return {"status": "ignored", "event": "repository", "action": action, "detail": f"Repository action '{action}' acknowledged."}
+
+
 def process_webhook_event(event_type: str, payload: Dict[str, Any], db: Session) -> Dict[str, Any]:
     """
     Central dispatcher routing GitHub webhook events to specialized handlers.
     Dispatches:
       - ping
+      - repository
       - issues
       - pull_request
       - push
@@ -84,20 +179,22 @@ def process_webhook_event(event_type: str, payload: Dict[str, Any], db: Session)
         if not repo:
             repo = db.query(Repository).filter(Repository.name == repo_data.get("name")).first()
 
-    if event_type == "issues":
-        return _handle_issues_event(payload, repo, db)
+    if event_type == "repository":
+        return _handle_repository_event(payload, db)
+    elif event_type == "issues":
+        return _handle_issues_event(payload, repo or _get_or_create_repo_from_payload(payload, db), db)
     elif event_type == "pull_request":
-        return _handle_pull_request_event(payload, repo, db)
+        return _handle_pull_request_event(payload, repo or _get_or_create_repo_from_payload(payload, db), db)
     elif event_type == "push":
-        return _handle_push_event(payload, repo, db)
+        return _handle_push_event(payload, repo or _get_or_create_repo_from_payload(payload, db), db)
     elif event_type == "pull_request_review":
-        return _handle_pull_request_review_event(payload, repo, db)
+        return _handle_pull_request_review_event(payload, repo or _get_or_create_repo_from_payload(payload, db), db)
     else:
         return {"status": "ignored", "event": event_type, "detail": f"Unhandled event type '{event_type}'."}
 
 
 def _handle_issues_event(payload: Dict[str, Any], repo: Optional[Repository], db: Session) -> Dict[str, Any]:
-    """Handle issue lifecycle events (opened, edited, labeled, closed, reopened)."""
+    """Handle issue lifecycle events (opened, edited, labeled, closed, reopened, deleted)."""
     action = payload.get("action")
     issue_data = payload.get("issue", {})
     gh_issue_id = issue_data.get("id")
@@ -105,7 +202,16 @@ def _handle_issues_event(payload: Dict[str, Any], repo: Optional[Repository], db
     if not gh_issue_id:
         return {"status": "error", "event": "issues", "action": action, "detail": "Missing issue data in payload."}
 
+    if not repo:
+        repo = _get_or_create_repo_from_payload(payload, db)
+
     issue = db.query(Issue).filter(Issue.github_issue_id == gh_issue_id).first()
+
+    if action == "deleted" and issue:
+        db.delete(issue)
+        db.commit()
+        return {"status": "success", "event": "issues", "action": action, "detail": f"Issue #{gh_issue_id} deleted."}
+
     label_names = [lbl["name"] for lbl in issue_data.get("labels", []) if isinstance(lbl, dict) and "name" in lbl]
     difficulty, category, tech_tags = _infer_issue_metadata(label_names)
 
@@ -119,7 +225,7 @@ def _handle_issues_event(payload: Dict[str, Any], repo: Optional[Repository], db
             category=category,
             tech_tags=tech_tags,
             labels=label_names,
-            status=IssueStatus.OPEN,
+            status=IssueStatus.CLOSED if action == "closed" else IssueStatus.OPEN,
         )
         db.add(issue)
         db.flush()
@@ -134,8 +240,9 @@ def _handle_issues_event(payload: Dict[str, Any], repo: Optional[Repository], db
     if issue:
         if action == "closed":
             issue.status = IssueStatus.CLOSED
-        elif action == "reopened":
-            issue.status = IssueStatus.OPEN
+        elif action in ["reopened", "opened"]:
+            if issue.status == IssueStatus.CLOSED:
+                issue.status = IssueStatus.OPEN
 
     db.commit()
     return {"status": "success", "event": "issues", "action": action, "detail": f"Issue #{gh_issue_id} processed."}

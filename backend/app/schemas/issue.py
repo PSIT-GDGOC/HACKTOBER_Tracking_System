@@ -39,6 +39,12 @@ class RepositoryBrief(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class RepositoryCreate(BaseModel):
+    name: str = Field(..., max_length=255)
+    github_repo_url: str = Field(..., max_length=500)
+    platform: str = Field("web", max_length=50)
+
+
 class IssueResponse(BaseModel):
     id: int
     repo_id: int
@@ -70,3 +76,4 @@ class IssueSyncResponse(BaseModel):
     synced_count: int
     created_count: int
     updated_count: int
+    repos_discovered_count: Optional[int] = 0

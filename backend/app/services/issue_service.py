@@ -63,15 +63,176 @@ def _infer_issue_metadata(labels: List[str]) -> Tuple[IssueDifficulty, Optional[
     return difficulty, category, list(set(tech_tags))
 
 
+def discover_github_repositories(db: Session) -> int:
+    """Discover and auto-register public repos under target GitHub orgs/users."""
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "GDGOC-Hacktoberfest-Platform",
+    }
+    if settings.GITHUB_ACCESS_TOKEN:
+        headers["Authorization"] = f"Bearer {settings.GITHUB_ACCESS_TOKEN}"
+
+    owners = set()
+    # Extract owners from configured repos & existing repos
+    for repo_url in [settings.GITHUB_WEB_REPO_URL, settings.GITHUB_ANDROID_REPO_URL]:
+        if repo_url:
+            try:
+                owner, _ = _extract_repo_owner_name(repo_url)
+                owners.add(owner)
+            except ValueError:
+                pass
+    existing_repos = db.query(Repository).all()
+    for r in existing_repos:
+        try:
+            owner, _ = _extract_repo_owner_name(r.github_repo_url)
+            owners.add(owner)
+        except ValueError:
+            pass
+
+    if not owners:
+        owners = {"PSIT-GDGOC", "gdgoc-psit"}
+
+    discovered_count = 0
+    from app.models import PlatformType
+
+    with httpx.Client(headers=headers, timeout=15.0) as client:
+        for owner in owners:
+            # Try orgs first, fallback to users
+            urls = [
+                f"https://api.github.com/orgs/{owner}/repos?per_page=100",
+                f"https://api.github.com/users/{owner}/repos?per_page=100",
+            ]
+            gh_repos = []
+            for url in urls:
+                try:
+                    resp = client.get(url)
+                    if resp.status_code == 200:
+                        gh_repos = resp.json()
+                        if isinstance(gh_repos, list) and len(gh_repos) > 0:
+                            break
+                except Exception:
+                    continue
+
+            if not isinstance(gh_repos, list):
+                continue
+
+            fetched_repo_urls = set()
+            for r in gh_repos:
+                if not isinstance(r, dict) or r.get("fork", False) or r.get("archived", False):
+                    continue
+                r_name = r.get("name")
+                r_url = r.get("html_url")
+                if not r_name or not r_url:
+                    continue
+
+                fetched_repo_urls.add(r_url.lower())
+
+                exists = db.query(Repository).filter(
+                    or_(Repository.github_repo_url.ilike(r_url), Repository.name.ilike(r_name))
+                ).first()
+
+                if not exists:
+                    lower_name = r_name.lower()
+                    platform = PlatformType.ANDROID if "android" in lower_name else PlatformType.WEB
+                    new_repo = Repository(
+                        name=r_name,
+                        github_repo_url=r_url,
+                        platform=platform
+                    )
+                    db.add(new_repo)
+                    discovered_count += 1
+
+            # Remove repos from DB that were deleted on GitHub for this owner
+            if fetched_repo_urls:
+                existing_owner_repos = db.query(Repository).all()
+                for db_r in existing_owner_repos:
+                    try:
+                        r_owner, _ = _extract_repo_owner_name(db_r.github_repo_url)
+                        if r_owner.lower() == owner.lower():
+                            if db_r.github_repo_url.lower() not in fetched_repo_urls:
+                                db.delete(db_r)
+                    except ValueError:
+                        pass
+
+    db.commit()
+
+    return discovered_count
+
+
+def create_repository(db: Session, name: str, github_repo_url: str, platform: str) -> Repository:
+    """Manually register a new repository."""
+    from app.models import PlatformType
+    cleaned_url = github_repo_url.strip()
+    cleaned_name = name.strip()
+
+    existing = db.query(Repository).filter(
+        or_(Repository.github_repo_url.ilike(cleaned_url), Repository.name.ilike(cleaned_name))
+    ).first()
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Repository '{existing.name}' is already registered."
+        )
+
+    plat_enum = PlatformType.ANDROID if platform.lower() in ("android", "phone") else PlatformType.WEB
+    repo = Repository(
+        name=cleaned_name,
+        github_repo_url=cleaned_url,
+        platform=plat_enum
+    )
+    db.add(repo)
+    db.commit()
+    db.refresh(repo)
+    return repo
+
+
+def delete_repository(db: Session, repo_id: int) -> dict:
+    """Unregister / delete a repository from the system along with its issues, PRs, and commits."""
+    repo = db.query(Repository).filter(Repository.id == repo_id).first()
+    if not repo:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Repository with ID {repo_id} not found."
+        )
+
+    repo_name = repo.name
+    db.delete(repo)
+    db.commit()
+    return {
+        "message": f"Repository '{repo_name}' (ID {repo_id}) and its associated issues/PRs successfully deleted.",
+        "repo_id": repo_id
+    }
+
+
 def sync_issues_from_github(db: Session, repo_id: Optional[int] = None) -> dict:
     """Sync issues from GitHub REST API for one or all registered repositories."""
+    discovered_count = 0
+    if not repo_id:
+        discovered_count = discover_github_repositories(db)
+
     repos_query = db.query(Repository)
     if repo_id:
         repos_query = repos_query.filter(Repository.id == repo_id)
     repos = repos_query.all()
 
     if not repos:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No repositories found to sync.")
+        # If DB is empty, seed defaults
+        from app.models import PlatformType
+        r1 = Repository(
+            name="hacktoberfest-web",
+            github_repo_url=settings.GITHUB_WEB_REPO_URL or "https://github.com/PSIT-GDGOC/hacktoberfest-web",
+            platform=PlatformType.WEB,
+        )
+        r2 = Repository(
+            name="hacktoberfest-android",
+            github_repo_url=settings.GITHUB_ANDROID_REPO_URL or "https://github.com/gdgoc-psit/hacktoberfest-android",
+            platform=PlatformType.ANDROID,
+        )
+        db.add_all([r1, r2])
+        db.commit()
+        db.refresh(r1)
+        db.refresh(r2)
+        repos = [r1, r2]
 
     headers = {
         "Accept": "application/vnd.github+json",
@@ -102,12 +263,14 @@ def sync_issues_from_github(db: Session, repo_id: Optional[int] = None) -> dict:
             except Exception:
                 continue
 
+            fetched_issue_ids = set()
             for item in gh_issues:
                 # GitHub issues endpoint includes pull requests; filter them out
                 if "pull_request" in item:
                     continue
 
                 gh_issue_id = item["id"]
+                fetched_issue_ids.add(gh_issue_id)
                 title = item.get("title", "Untitled")
                 body = item.get("body", "")
                 label_names = [lbl["name"] for lbl in item.get("labels", []) if isinstance(lbl, dict) and "name" in lbl]
@@ -123,8 +286,10 @@ def sync_issues_from_github(db: Session, repo_id: Optional[int] = None) -> dict:
                     existing_issue.tech_tags = tech_tags
                     if category:
                         existing_issue.category = category
-                    if gh_state == "closed":
+                    if gh_state == "closed" and existing_issue.status != IssueStatus.CLOSED:
                         existing_issue.status = IssueStatus.CLOSED
+                    elif gh_state == "open" and existing_issue.status == IssueStatus.CLOSED:
+                        existing_issue.status = IssueStatus.OPEN
                     updated_total += 1
                 else:
                     new_issue = Issue(
@@ -142,12 +307,19 @@ def sync_issues_from_github(db: Session, repo_id: Optional[int] = None) -> dict:
                     created_total += 1
                 synced_total += 1
 
+            # Delete issues from DB that were removed from GitHub for this repo
+            existing_db_issues = db.query(Issue).filter(Issue.repo_id == repo.id).all()
+            for db_iss in existing_db_issues:
+                if db_iss.github_issue_id not in fetched_issue_ids:
+                    db.delete(db_iss)
+
     db.commit()
     return {
         "message": "GitHub issues sync completed successfully.",
         "synced_count": synced_total,
         "created_count": created_total,
         "updated_count": updated_total,
+        "repos_discovered_count": discovered_count,
     }
 
 

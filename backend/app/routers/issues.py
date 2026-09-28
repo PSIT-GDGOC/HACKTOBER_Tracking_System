@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.dependencies import get_current_user
 from app.models import User, IssueDifficulty, IssueStatus, Repository
-from app.schemas.issue import IssueResponse, IssueListResponse, IssueSyncResponse, RepositoryBrief
+from app.schemas.issue import IssueResponse, IssueListResponse, IssueSyncResponse, RepositoryBrief, RepositoryCreate
 from app.schemas.claim import ClaimResponse, ClaimReleaseResponse
 from app.services.issue_service import (
     sync_issues_from_github,
@@ -13,6 +13,8 @@ from app.services.issue_service import (
     get_issue_by_id,
     claim_issue,
     unclaim_issue,
+    create_repository,
+    delete_repository,
 )
 
 router = APIRouter(prefix="/issues", tags=["Issues"])
@@ -40,6 +42,33 @@ def list_repositories(db: Session = Depends(get_db)):
         db.refresh(r2)
         repos = [r1, r2]
     return repos
+
+
+@router.post("/repositories", response_model=RepositoryBrief, status_code=status.HTTP_201_CREATED, summary="Register a new repository")
+def add_repository(
+    body: RepositoryCreate,
+    db: Session = Depends(get_db),
+):
+    """
+    Register a new GitHub repository to be tracked in Hacktoberfest.
+    """
+    return create_repository(
+        db=db,
+        name=body.name,
+        github_repo_url=body.github_repo_url,
+        platform=body.platform
+    )
+
+
+@router.delete("/repositories/{repo_id}", summary="Delete / unregister a repository")
+def remove_repository(
+    repo_id: int,
+    db: Session = Depends(get_db),
+):
+    """
+    Unregister / delete a repository and clean up its issues, PRs, and commits.
+    """
+    return delete_repository(db=db, repo_id=repo_id)
 
 
 @router.post("/sync", response_model=IssueSyncResponse, summary="Sync issues from GitHub")

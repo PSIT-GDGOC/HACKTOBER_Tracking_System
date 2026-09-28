@@ -302,3 +302,85 @@ def test_push_event_records_commits(client_and_db, monkeypatch):
     assert c.user_id == 1
     assert c.issue_id == 1
     assert c.message == "feat: initial commit for dark mode"
+
+
+def test_repository_webhook_creation_and_deletion(client_and_db, monkeypatch):
+    client, db = client_and_db
+    monkeypatch.setattr(settings, "GITHUB_WEBHOOK_SECRET", "")
+
+    # 1. 'created' repository event
+    created_payload = {
+        "action": "created",
+        "repository": {
+            "name": "hacktoberfest-ios",
+            "html_url": "https://github.com/gdgoc-psit/hacktoberfest-ios"
+        }
+    }
+    res = client.post("/webhooks/github", json=created_payload, headers={"X-GitHub-Event": "repository"})
+    assert res.status_code == 200
+    repo = db.query(Repository).filter(Repository.name == "hacktoberfest-ios").first()
+    assert repo is not None
+    assert repo.github_repo_url == "https://github.com/gdgoc-psit/hacktoberfest-ios"
+
+    # 2. 'deleted' repository event
+    deleted_payload = {
+        "action": "deleted",
+        "repository": {
+            "name": "hacktoberfest-ios",
+            "html_url": "https://github.com/gdgoc-psit/hacktoberfest-ios"
+        }
+    }
+    res = client.post("/webhooks/github", json=deleted_payload, headers={"X-GitHub-Event": "repository"})
+    assert res.status_code == 200
+    repo_after = db.query(Repository).filter(Repository.name == "hacktoberfest-ios").first()
+    assert repo_after is None
+
+
+def test_issues_webhook_auto_creates_repo_and_handles_deletion(client_and_db, monkeypatch):
+    client, db = client_and_db
+    monkeypatch.setattr(settings, "GITHUB_WEBHOOK_SECRET", "")
+
+    # Issue opened on an un-registered repository
+    issue_payload = {
+        "action": "opened",
+        "repository": {
+            "name": "hacktoberfest-cli",
+            "html_url": "https://github.com/gdgoc-psit/hacktoberfest-cli"
+        },
+        "issue": {
+            "id": 998877,
+            "title": "Fix CLI spinner animation",
+            "body": "Spinner freezes when downloading dependencies.",
+            "labels": [{"name": "medium"}, {"name": "python"}]
+        }
+    }
+    res = client.post("/webhooks/github", json=issue_payload, headers={"X-GitHub-Event": "issues"})
+    assert res.status_code == 200
+
+    # Verify repository was auto-created
+    auto_repo = db.query(Repository).filter(Repository.name == "hacktoberfest-cli").first()
+    assert auto_repo is not None
+
+    # Verify issue was created under auto-created repository
+    created_issue = db.query(Issue).filter(Issue.github_issue_id == 998877).first()
+    assert created_issue is not None
+    assert created_issue.title == "Fix CLI spinner animation"
+    assert created_issue.repo_id == auto_repo.id
+
+    # Issue deleted on GitHub
+    delete_issue_payload = {
+        "action": "deleted",
+        "repository": {
+            "name": "hacktoberfest-cli",
+            "html_url": "https://github.com/gdgoc-psit/hacktoberfest-cli"
+        },
+        "issue": {
+            "id": 998877
+        }
+    }
+    res = client.post("/webhooks/github", json=delete_issue_payload, headers={"X-GitHub-Event": "issues"})
+    assert res.status_code == 200
+
+    deleted_issue = db.query(Issue).filter(Issue.github_issue_id == 998877).first()
+    assert deleted_issue is None
+

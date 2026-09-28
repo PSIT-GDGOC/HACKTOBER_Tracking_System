@@ -139,8 +139,10 @@ export const api = {
   githubCallback: (body) => request("/auth/github/callback", { method: "POST", body }), // { code }
   linkGithub: (body) => request("/auth/github/link", { method: "POST", body }), // { github_username, github_id? }
 
-  /* ---- issues (Abu's module) ---- */
+  /* ---- issues & repositories ---- */
   repositories: () => request("/issues/repositories"),
+  addRepository: (body) => request("/issues/repositories", { method: "POST", body }),
+  deleteRepository: (id) => request(`/issues/repositories/${id}`, { method: "DELETE" }),
   syncIssues: (repoId) =>
     request(`/issues/sync${qs({ repo_id: repoId })}`, { method: "POST" }),
   issues: (params = {}) =>

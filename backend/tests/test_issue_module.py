@@ -142,3 +142,34 @@ def test_unclaim_flow(client_and_db):
     res = client.post("/issues/1/claim", headers={"X-User-Id": "2"})
     assert res.status_code == 201
     assert res.json()["user"]["psit_roll_no"] == "2202"
+
+
+def test_repository_crud_endpoints(client_and_db):
+    client, _ = client_and_db
+
+    # 1. Register a new repository
+    new_repo_payload = {
+        "name": "new-test-repo",
+        "github_repo_url": "https://github.com/PSIT-GDGOC/new-test-repo",
+        "platform": "web"
+    }
+    res = client.post("/issues/repositories", json=new_repo_payload)
+    assert res.status_code == 201
+    created_repo = res.json()
+    assert created_repo["name"] == "new-test-repo"
+
+    # 2. List repositories
+    res = client.get("/issues/repositories")
+    assert res.status_code == 200
+    repos = res.json()
+    assert any(r["name"] == "new-test-repo" for r in repos)
+
+    # 3. Delete repository
+    repo_id = created_repo["id"]
+    res = client.delete(f"/issues/repositories/{repo_id}")
+    assert res.status_code == 200
+
+    # 4. Verify deleted
+    res = client.get("/issues/repositories")
+    assert not any(r["id"] == repo_id for r in res.json())
+

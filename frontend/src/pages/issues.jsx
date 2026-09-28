@@ -32,6 +32,23 @@ export default function IssueExplorer() {
     skip: 0,
   });
   const [repos, setRepos] = useState([]);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState(null);
+
+  const handleSync = async () => {
+    setSyncing(true);
+    setSyncMsg(null);
+    try {
+      const res = await api.syncIssues(filters.repo_id || undefined);
+      q.refetch();
+      api.repositories().then((list) => { if (Array.isArray(list)) setRepos(list); });
+      setSyncMsg(res?.message ? `${res.message} (${res.synced_count || 0} synced, ${res.created_count || 0} new)` : "GitHub issues synced.");
+    } catch (e) {
+      setSyncMsg(e?.detail || e?.message || "Sync failed.");
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   /** Deep links like /dashboard/issues?status=claimed update filters in place. */
   useEffect(() => {
@@ -159,10 +176,27 @@ export default function IssueExplorer() {
       <PageHeader
         eyebrow="Contribute"
         title="Issue Explorer"
-        subtitle="Synced from both official repositories. Filters run server-side; claims are locked atomically so no two students can work the same issue."
+        subtitle="Synced from registered repositories. Filters run server-side; claims are locked atomically so no two students can work the same issue."
         sticker={`${total} issues`}
-        actions={<UpdatedPill lastUpdated={q.lastUpdated} />}
+        actions={
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleSync}
+              disabled={syncing}
+              className="border-2 border-ink bg-gyellow px-3 py-1.5 font-mono text-xs font-bold uppercase shadow-[2px_2px_0_0_#101010] hover:-translate-y-0.5 disabled:opacity-50"
+            >
+              {syncing ? "Syncing..." : "Sync from GitHub ↻"}
+            </button>
+            <UpdatedPill lastUpdated={q.lastUpdated} />
+          </div>
+        }
       />
+
+      {syncMsg && (
+        <div className="mb-4 border-2 border-ink bg-gyellow-light p-3 font-mono text-xs font-bold">
+          {syncMsg}
+        </div>
+      )}
 
       <div className="mb-5">
         <FilterBar

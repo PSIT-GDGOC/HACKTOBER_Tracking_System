@@ -462,7 +462,7 @@ export function LeaderboardRow({ entry, me = false }) {
 /*  Repo card (from a RepositoryBrief)                                 */
 /* ------------------------------------------------------------------ */
 
-export function RepoCard({ repo }) {
+export function RepoCard({ repo, onDelete }) {
   return (
     <Panel hover className="flex h-full flex-col p-5">
       <div className="flex items-start justify-between gap-3">
@@ -472,6 +472,15 @@ export function RepoCard({ repo }) {
           </span>
           <h3 className="mt-2 font-display text-lg font-extrabold tracking-tight">{repo.name}</h3>
         </div>
+        {onDelete && (
+          <button
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(repo); }}
+            title="Delete repository"
+            className="border-2 border-ink bg-gred px-2 py-0.5 font-mono text-[10px] font-bold uppercase text-white shadow-[2px_2px_0_0_#101010] hover:bg-red-700"
+          >
+            ✕ Delete
+          </button>
+        )}
       </div>
       <a
         href={repo.github_repo_url}

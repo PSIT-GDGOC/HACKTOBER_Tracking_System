@@ -907,6 +907,87 @@
             }
           }
         }
+      },
+      "post": {
+        "tags": [
+          "Issues"
+        ],
+        "summary": "Register a new repository",
+        "description": "Register a new GitHub repository to be tracked in Hacktoberfest.",
+        "operationId": "add_repository_issues_repositories_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RepositoryCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepositoryBrief"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/issues/repositories/{repo_id}": {
+      "delete": {
+        "tags": [
+          "Issues"
+        ],
+        "summary": "Delete / unregister a repository",
+        "description": "Unregister / delete a repository and clean up its issues, PRs, and commits.",
+        "operationId": "remove_repository_issues_repositories__repo_id__delete",
+        "parameters": [
+          {
+            "name": "repo_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Repo Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/issues/sync": {
@@ -4156,6 +4237,87 @@
                   },
                   "type": "array",
                   "title": "Response List Repositories Api Issues Repositories Get"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Issues"
+        ],
+        "summary": "Register a new repository",
+        "description": "Register a new GitHub repository to be tracked in Hacktoberfest.",
+        "operationId": "add_repository_api_issues_repositories_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RepositoryCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepositoryBrief"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/issues/repositories/{repo_id}": {
+      "delete": {
+        "tags": [
+          "Issues"
+        ],
+        "summary": "Delete / unregister a repository",
+        "description": "Unregister / delete a repository and clean up its issues, PRs, and commits.",
+        "operationId": "remove_repository_api_issues_repositories__repo_id__delete",
+        "parameters": [
+          {
+            "name": "repo_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Repo Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -7585,6 +7747,18 @@
           "updated_count": {
             "type": "integer",
             "title": "Updated Count"
+          },
+          "repos_discovered_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repos Discovered Count",
+            "default": 0
           }
         },
         "type": "object",
@@ -8196,6 +8370,32 @@
           "github_repo_url"
         ],
         "title": "RepositoryBrief"
+      },
+      "RepositoryCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 255,
+            "title": "Name"
+          },
+          "github_repo_url": {
+            "type": "string",
+            "maxLength": 500,
+            "title": "Github Repo Url"
+          },
+          "platform": {
+            "type": "string",
+            "maxLength": 50,
+            "title": "Platform",
+            "default": "web"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "github_repo_url"
+        ],
+        "title": "RepositoryCreate"
       },
       "RepositoryDashboardResponse": {
         "properties": {

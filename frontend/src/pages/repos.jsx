@@ -25,13 +25,72 @@ export function Repositories() {
   const { repoId } = useParams();
   const [repos, setRepos] = useState(null);
   const [loadError, setLoadError] = useState(null);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newRepo, setNewRepo] = useState({ name: "", github_repo_url: "", platform: "web" });
+  const [addLoading, setAddLoading] = useState(false);
+  const [addError, setAddError] = useState(null);
+  const [syncingAll, setSyncingAll] = useState(false);
+  const [syncMsg, setSyncMsg] = useState(null);
+
   const drawers = useDrawers();
 
-  useEffect(() => {
+  const fetchRepos = () => {
     discoverRepositories()
       .then(setRepos)
       .catch((e) => setLoadError(e?.detail || e?.message || "Could not load repositories"));
+  };
+
+  useEffect(() => {
+    fetchRepos();
   }, []);
+
+  const handleAddRepo = async (e) => {
+    e.preventDefault();
+    if (!newRepo.name || !newRepo.github_repo_url) {
+      setAddError("Please fill in both name and GitHub URL.");
+      return;
+    }
+    setAddLoading(true);
+    setAddError(null);
+    try {
+      await api.addRepository(newRepo);
+      setNewRepo({ name: "", github_repo_url: "", platform: "web" });
+      setShowAddForm(false);
+      fetchRepos();
+      setSyncMsg(`Repository '${newRepo.name}' added successfully.`);
+    } catch (err) {
+      setAddError(err?.detail || err?.message || "Failed to add repository.");
+    } finally {
+      setAddLoading(false);
+    }
+  };
+
+  const handleDeleteRepo = async (repoToDelete) => {
+    if (!window.confirm(`Are you sure you want to delete repository '${repoToDelete.name}'? This will remove all associated issues.`)) {
+      return;
+    }
+    try {
+      await api.deleteRepository(repoToDelete.id);
+      fetchRepos();
+      setSyncMsg(`Repository '${repoToDelete.name}' deleted successfully.`);
+    } catch (err) {
+      setSyncMsg(err?.detail || err?.message || "Failed to delete repository.");
+    }
+  };
+
+  const handleSyncAll = async () => {
+    setSyncingAll(true);
+    setSyncMsg(null);
+    try {
+      const res = await api.syncIssues();
+      fetchRepos();
+      setSyncMsg(res?.message ? `${res.message} (${res.synced_count || 0} issues synced)` : "Sync completed.");
+    } catch (err) {
+      setSyncMsg(err?.detail || err?.message || "Sync failed.");
+    } finally {
+      setSyncingAll(false);
+    }
+  };
 
   const repo = repos?.find((r) => String(r.id) === String(repoId));
 
@@ -43,7 +102,7 @@ export function Repositories() {
         subtitle={
           repo
             ? `${PLATFORM_LABEL[repo.platform] ?? repo.platform} · ${repo.github_repo_url}`
-            : "Two codebases, one leaderboard. Issues, PRs and commits sync from GitHub via webhooks."
+            : "Tracked GitHub repositories. Issues, PRs and commits sync automatically via webhooks."
         }
         actions={
           repo ? (
@@ -55,22 +114,111 @@ export function Repositories() {
             >
               GitHub ↗
             </a>
-          ) : undefined
+          ) : (
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={() => setShowAddForm(!showAddForm)}
+                className="border-[3px] border-ink bg-ggreen px-3.5 py-2 font-display text-xs font-bold uppercase text-paper shadow-[3px_3px_0_0_#101010] hover:-translate-y-0.5"
+              >
+                {showAddForm ? "✕ Cancel" : "+ Add Repo"}
+              </button>
+              <button
+                onClick={handleSyncAll}
+                disabled={syncingAll}
+                className="border-[3px] border-ink bg-gyellow px-3.5 py-2 font-display text-xs font-bold uppercase text-ink shadow-[3px_3px_0_0_#101010] hover:-translate-y-0.5 disabled:opacity-50"
+              >
+                {syncingAll ? "Syncing..." : "Sync All ↻"}
+              </button>
+            </div>
+          )
         }
       />
 
+      {syncMsg && (
+        <div className="mb-4 border-2 border-ink bg-gyellow-light p-3 font-mono text-xs font-bold">
+          {syncMsg}
+        </div>
+      )}
+
+      {showAddForm && !repoId && (
+        <Panel className="mb-6 p-5">
+          <SectionHeading title="Add New Repository" subtitle="Register a repository to sync issues, PRs, and commits." />
+          {addError && <div className="mb-3 border-2 border-ink bg-gred-light p-2.5 font-mono text-xs font-bold text-gred">{addError}</div>}
+          <form onSubmit={handleAddRepo} className="mt-4 grid gap-4 sm:grid-cols-3">
+            <div>
+              <label className="block font-mono text-xs font-bold uppercase mb-1">Repo Name</label>
+              <input
+                type="text"
+                placeholder="e.g. hacktoberfest-custom"
+                value={newRepo.name}
+                onChange={(e) => setNewRepo({ ...newRepo, name: e.target.value })}
+                className="w-full border-2 border-ink p-2 font-mono text-xs"
+                required
+              />
+            </div>
+            <div>
+              <label className="block font-mono text-xs font-bold uppercase mb-1">GitHub Repo URL</label>
+              <input
+                type="url"
+                placeholder="https://github.com/PSIT-GDGOC/repo-name"
+                value={newRepo.github_repo_url}
+                onChange={(e) => setNewRepo({ ...newRepo, github_repo_url: e.target.value })}
+                className="w-full border-2 border-ink p-2 font-mono text-xs"
+                required
+              />
+            </div>
+            <div>
+              <label className="block font-mono text-xs font-bold uppercase mb-1">Platform</label>
+              <select
+                value={newRepo.platform}
+                onChange={(e) => setNewRepo({ ...newRepo, platform: e.target.value })}
+                className="w-full border-2 border-ink p-2 font-mono text-xs"
+              >
+                <option value="web">🌐 Web</option>
+                <option value="android">📱 Android</option>
+              </select>
+            </div>
+            <div className="sm:col-span-3 flex justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setShowAddForm(false)}
+                className="border-2 border-ink bg-paper-3 px-4 py-2 font-mono text-xs font-bold uppercase hover:bg-paper-2"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={addLoading}
+                className="border-2 border-ink bg-gblue px-4 py-2 font-mono text-xs font-bold uppercase text-white hover:bg-blue-700 disabled:opacity-50"
+              >
+                {addLoading ? "Adding..." : "Register Repository"}
+              </button>
+            </div>
+          </form>
+        </Panel>
+      )}
+
       {!repoId && (
         <>
-          {loadError && <ErrorState message={loadError} onRetry={() => discoverRepositories().then(setRepos)} />}
+          {loadError && <ErrorState message={loadError} onRetry={fetchRepos} />}
           {!repos && <LoadingBlock rows={4} label="Loading repositories" />}
           {repos && repos.length === 0 && (
             <EmptyState
               title="No repositories discovered yet"
-              body="Repositories appear once issues are synced from GitHub. Ask a maintainer to run POST /issues/sync."
+              body="Repositories appear once added or synced from GitHub."
+              action={
+                <button
+                  onClick={handleSyncAll}
+                  disabled={syncingAll}
+                  className="border-2 border-ink bg-gyellow px-4 py-2 font-mono text-xs font-bold uppercase"
+                >
+                  Sync from GitHub now ↻
+                </button>
+              }
             />
           )}
           <div className="grid min-w-0 gap-5 md:grid-cols-2">
-            {repos?.map((r) => <RepoCard key={r.id} repo={r} />)}
+            {repos?.map((r) => <RepoCard key={r.id} repo={r} onDelete={handleDeleteRepo} />)}
           </div>
         </>
       )}
