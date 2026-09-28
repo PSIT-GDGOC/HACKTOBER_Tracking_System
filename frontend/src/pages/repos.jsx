@@ -65,18 +65,6 @@ export function Repositories() {
     }
   };
 
-  const handleDeleteRepo = async (repoToDelete) => {
-    if (!window.confirm(`Are you sure you want to delete repository '${repoToDelete.name}'? This will remove all associated issues.`)) {
-      return;
-    }
-    try {
-      await api.deleteRepository(repoToDelete.id);
-      fetchRepos();
-      setSyncMsg(`Repository '${repoToDelete.name}' deleted successfully.`);
-    } catch (err) {
-      setSyncMsg(err?.detail || err?.message || "Failed to delete repository.");
-    }
-  };
 
   const handleSyncAll = async () => {
     setSyncingAll(true);
@@ -218,7 +206,7 @@ export function Repositories() {
             />
           )}
           <div className="grid min-w-0 gap-5 md:grid-cols-2">
-            {repos?.map((r) => <RepoCard key={r.id} repo={r} onDelete={handleDeleteRepo} />)}
+            {repos?.map((r) => <RepoCard key={r.id} repo={r} />)}
           </div>
         </>
       )}
