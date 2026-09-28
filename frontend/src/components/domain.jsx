@@ -77,7 +77,7 @@ export function ClaimButton({ status, points, onClaim, onRelease, pending, disab
     return (
       <div className="space-y-1.5">
         <Button variant="green" onClick={onClaim} loading={pending} disabled={disabled}>
-          ⚑ Claim for {points} pts
+          ⚑ Claim Issue
         </Button>
         {hint && <p className="font-mono text-[10px] text-ink-soft">{hint}</p>}
       </div>
@@ -95,22 +95,18 @@ export function ClaimButton({ status, points, onClaim, onRelease, pending, disab
 }
 
 export function IssueCard({ issue, onClaim, pending, compact }) {
-  const diff = difficultyTone[issue.difficulty] ?? difficultyTone.easy;
-  const pts = pointsFor(issue);
-  const platform = issue.repository?.platform;
+  const repoName = issue.repository?.name;
   return (
     <Panel hover className="flex h-full flex-col p-4">
       <div className="mb-2.5 flex items-start justify-between gap-3">
         <div className="flex flex-wrap items-center gap-1.5">
-          <span className="border-2 border-ink bg-paper-2 px-2 py-0.5 font-mono text-[10px] font-bold uppercase">
-            {platform ? PLATFORM_LABEL[platform] ?? platform : "issue"}
-          </span>
-          <span className={cn("border-2 border-ink px-2 py-0.5 font-mono text-[10px] font-bold uppercase", diff.bg)}>
-            {difficultyIcon[issue.difficulty]} {issue.difficulty}
-          </span>
+          {repoName && (
+            <span className="border-2 border-ink bg-gyellow px-2 py-0.5 font-mono text-[10px] font-bold uppercase">
+              {repoName}
+            </span>
+          )}
           <StatusBadge status={issue.status} />
         </div>
-        <span className="shrink-0 border-2 border-ink bg-gyellow px-2 py-0.5 font-mono text-[11px] font-bold">+{pts}</span>
       </div>
 
       <button
@@ -124,12 +120,7 @@ export function IssueCard({ issue, onClaim, pending, compact }) {
 
       {!compact && (
         <div className="mt-3 flex flex-wrap items-center gap-1.5">
-          {issue.category && <Badge tone="paper">{issue.category}</Badge>}
-          {(issue.tech_tags || []).slice(0, 3).map((t) => (
-            <Badge key={t} tone="paper">{t}</Badge>
-          ))}
-          {(issue.tech_tags || []).length > 3 && <Badge tone="paper">+{issue.tech_tags.length - 3}</Badge>}
-          <span className="ml-1 font-mono text-[11px] text-ink-soft">{timeAgo(issue.updated_at)}</span>
+          <span className="font-mono text-[11px] text-ink-soft">updated {timeAgo(issue.updated_at)}</span>
         </div>
       )}
 
@@ -143,7 +134,7 @@ export function IssueCard({ issue, onClaim, pending, compact }) {
             </div>
           </div>
         ) : (
-          <span className="font-mono text-[11px] text-ink-soft">unclaimed · first come, first served</span>
+          <span className="font-mono text-[11px] text-ink-soft">unclaimed</span>
         )}
         {onClaim && (
           <ClaimButton

@@ -1,6 +1,6 @@
 /**
- * Issue Explorer — filterable list backed by GET /issues (server-side filters),
- * detail opens in a slide-over drawer (not a separate route).
+ * Issue Explorer — clean, direct list of open issues.
+ * FilterBar and stat cards removed for a simple, accurate repository workflow.
  */
 import { useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -8,63 +8,30 @@ import { api } from "@/lib/api";
 import { useData } from "@/lib/hooks";
 import { PageHeader, UpdatedPill } from "@/components/Layout";
 import {
-  Button, EmptyState, ErrorState, LoadingBlock, Pagination, Panel, StatCard, Tabs,
+  Button, EmptyState, ErrorState, LoadingBlock, Pagination, Panel,
 } from "@/components/ui";
-import { FilterBar, IssueCard, IssueCardSkeleton } from "@/components/domain";
+import { IssueCard, IssueCardSkeleton } from "@/components/domain";
 import { useDrawers } from "@/components/drawers";
-import { compact, pointsFor } from "@/lib/format";
 
 const PAGE_SIZE = 12;
-
-const REPO_OPTIONS_PLACEHOLDER = [{ value: "all", label: "Any repo" }];
 
 export default function IssueExplorer() {
   const [params, setParams] = useSearchParams();
   const drawers = useDrawers();
-  const [filters, setFilters] = useState({
-    repo_id: params.get("repo_id") ?? "",
-    platform: params.get("platform") ?? "",
-    difficulty: params.get("difficulty") ?? "",
-    category: params.get("category") ?? "",
-    tech_tag: params.get("tech_tag") ?? "",
-    status: params.get("status") ?? "",
-    search: params.get("search") ?? "",
-    skip: 0,
-  });
+  const [repoId, setRepoId] = useState(params.get("repo_id") ?? "");
+  const [search, setSearch] = useState(params.get("search") ?? "");
+  const [skip, setSkip] = useState(0);
+
   const [repos, setRepos] = useState([]);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState(null);
 
-  const handleSync = async () => {
-    setSyncing(true);
-    setSyncMsg(null);
-    try {
-      const res = await api.syncIssues(filters.repo_id || undefined);
-      q.refetch();
-      api.repositories().then((list) => { if (Array.isArray(list)) setRepos(list); });
-      setSyncMsg(res?.message ? `${res.message} (${res.synced_count || 0} synced, ${res.created_count || 0} new)` : "GitHub issues synced.");
-    } catch (e) {
-      setSyncMsg(e?.detail || e?.message || "Sync failed.");
-    } finally {
-      setSyncing(false);
-    }
-  };
-
-  /** Deep links like /dashboard/issues?status=claimed update filters in place. */
   useEffect(() => {
-    setFilters((f) => ({
-      ...f,
-      repo_id: params.get("repo_id") ?? f.repo_id,
-      platform: params.get("platform") ?? f.platform,
-      difficulty: params.get("difficulty") ?? f.difficulty,
-      category: params.get("category") ?? f.category,
-      status: params.get("status") ?? f.status,
-      search: params.get("search") ?? f.search,
-      skip: 0,
-    }));
+    setRepoId(params.get("repo_id") ?? "");
+    setSearch(params.get("search") ?? "");
+    setSkip(0);
   }, [params]);
 
-  /** ?open={issueId} deep link — opens the detail drawer. */
   useEffect(() => {
     const open = params.get("open");
     if (open) {
@@ -73,108 +40,53 @@ export default function IssueExplorer() {
       next.delete("open");
       setParams(next, { replace: true });
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params]);
 
-  /** Repository options loaded directly via official repositories list. */
   useEffect(() => {
     api.repositories().then((list) => {
       if (Array.isArray(list) && list.length > 0) setRepos(list);
     }).catch(() => {});
   }, []);
 
+  const handleSync = async () => {
+    setSyncing(true);
+    setSyncMsg(null);
+    try {
+      const res = await api.syncIssues(repoId || undefined);
+      q.refetch();
+      api.repositories().then((list) => { if (Array.isArray(list)) setRepos(list); });
+      setSyncMsg(res?.message ? `${res.message} (${res.synced_count || 0} synced)` : "GitHub issues synced.");
+    } catch (e) {
+      setSyncMsg(e?.detail || e?.message || "Sync failed.");
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const q = useData(
     () =>
       api.issues({
-        repo_id: filters.repo_id || undefined,
-        platform: filters.platform || undefined,
-        difficulty: filters.difficulty || undefined,
-        category: filters.category || undefined,
-        tech_tag: filters.tech_tag || undefined,
-        status: filters.status || undefined,
-        search: filters.search || undefined,
-        skip: filters.skip,
+        repo_id: repoId || undefined,
+        search: search || undefined,
+        skip,
         limit: PAGE_SIZE,
       }),
-    [filters],
+    [repoId, search, skip],
     { pollMs: 45000 },
   );
 
   const data = q.data;
   const total = data?.total ?? 0;
-  const page = Math.floor(filters.skip / PAGE_SIZE) + 1;
+  const page = Math.floor(skip / PAGE_SIZE) + 1;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-
-  const setParam = (k, v) => {
-    const next = new URLSearchParams(params);
-    if (v) next.set(k, v);
-    else next.delete(k);
-    setParams(next, { replace: true });
-  };
-
-  const set = (k, v) => setFilters((f) => ({ ...f, [k]: v, skip: 0 }));
-
-  const groups = [
-    {
-      label: "Repository / Platform",
-      value: filters.platform || filters.repo_id || "all",
-      onChange: (v) => {
-        if (v === "all") {
-          setFilters((f) => ({ ...f, platform: "", repo_id: "", skip: 0 }));
-          setParam("platform", "");
-          setParam("repo_id", "");
-        } else if (v === "web" || v === "android") {
-          setFilters((f) => ({ ...f, platform: v, repo_id: "", skip: 0 }));
-          setParam("platform", v);
-          setParam("repo_id", "");
-        } else {
-          setFilters((f) => ({ ...f, repo_id: v, platform: "", skip: 0 }));
-          setParam("repo_id", v);
-          setParam("platform", "");
-        }
-      },
-      options: [
-        { value: "all", label: "Any repo" },
-        { value: "web", label: "🌐 All Web Apps" },
-        { value: "android", label: "📱 All Android Apps" },
-        ...repos.map((r) => ({ value: String(r.id), label: `${r.name}` })),
-      ],
-    },
-    {
-      label: "Difficulty",
-      value: filters.difficulty || "all",
-      onChange: (v) => set("difficulty", v === "all" ? "" : v),
-      options: [
-        { value: "all", label: "Any" },
-        { value: "easy", label: "● Easy" },
-        { value: "medium", label: "●● Medium" },
-        { value: "hard", label: "●●● Hard" },
-      ],
-    },
-    {
-      label: "Status",
-      value: filters.status || "all",
-      onChange: (v) => set("status", v === "all" ? "" : v),
-      options: [
-        { value: "all", label: "Any" },
-        { value: "open", label: "Open" },
-        { value: "claimed", label: "Claimed" },
-        { value: "in_progress", label: "In progress" },
-        { value: "closed", label: "Closed" },
-      ],
-    },
-  ];
-
-  const items = data?.items || [];
-  const openNow = items.filter((i) => i.status === "open").length;
-  const pointsOnPage = items.reduce((a, i) => a + pointsFor(i), 0);
+  const activeRepo = repos.find((r) => String(r.id) === String(repoId));
 
   return (
     <>
       <PageHeader
         eyebrow="Contribute"
-        title="Issue Explorer"
-        subtitle="Synced from registered repositories. Filters run server-side; claims are locked atomically so no two students can work the same issue."
+        title={activeRepo ? `Issues · ${activeRepo.name}` : "Issue Explorer"}
+        subtitle={activeRepo ? `Showing all open issues for ${activeRepo.name}` : "Explore all open issues across your repositories."}
         sticker={`${total} issues`}
         actions={
           <div className="flex items-center gap-2">
@@ -196,27 +108,37 @@ export default function IssueExplorer() {
         </div>
       )}
 
-      <div className="mb-5">
-        <FilterBar
-          groups={groups}
-          search={filters.search}
-          onSearch={(v) => {
-            set("search", v);
-            setParam("search", v);
-          }}
-          searchPlaceholder="Search issue titles and descriptions…"
-          onReset={() => {
-            setParams(new URLSearchParams(), { replace: true });
-            setFilters({ repo_id: "", difficulty: "", category: "", tech_tag: "", status: "", search: "", skip: 0 });
-          }}
-          count={total}
-        />
-      </div>
-
-      <div className="mb-5 grid gap-4 sm:grid-cols-3">
-        <StatCard label="Open on this page" value={openNow} sub="claimable immediately" tone="green" />
-        <StatCard label="Showing" value={`${items.length} of ${compact(total)}`} sub={`page ${page} of ${totalPages}`} tone="blue" />
-        <StatCard label="Points on page" value={compact(pointsOnPage)} sub="if you merged all of them" tone="yellow" />
+      {/* Clean search bar */}
+      <div className="mb-6 flex flex-wrap items-center gap-3">
+        <div className="relative min-w-[240px] flex-1">
+          <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 font-mono text-sm text-ink-soft">⌕</span>
+          <input
+            value={search}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setSkip(0);
+              const next = new URLSearchParams(params);
+              if (e.target.value) next.set("search", e.target.value);
+              else next.delete("search");
+              setParams(next, { replace: true });
+            }}
+            placeholder="Search issues by title..."
+            className="w-full border-[3px] border-ink bg-white py-2.5 pl-9 pr-4 font-sans text-sm shadow-[3px_3px_0_0_#101010] focus:outline-none"
+          />
+        </div>
+        {repoId && (
+          <button
+            onClick={() => {
+              setRepoId("");
+              const next = new URLSearchParams(params);
+              next.delete("repo_id");
+              setParams(next, { replace: true });
+            }}
+            className="border-2 border-ink bg-paper-2 px-3 py-2 font-mono text-xs font-bold uppercase hover:bg-gyellow-light"
+          >
+            Show all repos ✕
+          </button>
+        )}
       </div>
 
       {q.loading && (
@@ -225,35 +147,27 @@ export default function IssueExplorer() {
         </div>
       )}
       {q.error && <ErrorState message={q.error} onRetry={q.refetch} />}
-      {data && items.length === 0 && (
+      {data && (data.items || []).length === 0 && (
         <EmptyState
-          title={total === 0 ? "No issues available yet" : "No issues match those filters"}
-          body={
-            total === 0
-              ? "There are currently no open issues in the repository. Issues created on GitHub (https://github.com/PSIT-GDGOC/hacktoberfest-web) will appear here automatically."
-              : "Try widening the difficulty or clearing the search — new issues land every week during the sprint."
-          }
+          title="No issues available"
+          body={activeRepo ? `No open issues found for ${activeRepo.name}.` : "There are currently no open issues in the platform."}
           action={
-            total === 0 ? (
-              <a
-                href="https://github.com/PSIT-GDGOC/hacktoberfest-web/issues"
-                target="_blank"
-                rel="noreferrer"
-                className="border-2 border-ink bg-ink px-4 py-2 font-mono text-xs font-bold text-paper hover:bg-opacity-90 inline-block"
-              >
-                Open GitHub Issues ↗
-              </a>
-            ) : (
-              <Button variant="paper" onClick={() => { setParams(new URLSearchParams(), { replace: true }); setFilters({ repo_id: "", difficulty: "", category: "", tech_tag: "", status: "", search: "", skip: 0 }); }}>
-                Clear all filters
-              </Button>
-            )
+            <Button
+              variant="paper"
+              onClick={() => {
+                setSearch("");
+                setRepoId("");
+                setParams(new URLSearchParams(), { replace: true });
+              }}
+            >
+              Clear search
+            </Button>
           }
         />
       )}
 
       <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-        {items.map((i) => (
+        {(data?.items || []).map((i) => (
           <IssueCard key={i.id} issue={i} />
         ))}
       </div>
@@ -262,7 +176,7 @@ export default function IssueExplorer() {
         <Pagination
           page={page}
           totalPages={totalPages}
-          onPage={(p) => setFilters((f) => ({ ...f, skip: (p - 1) * PAGE_SIZE }))}
+          onPage={(p) => setSkip((p - 1) * PAGE_SIZE)}
         />
       )}
 
