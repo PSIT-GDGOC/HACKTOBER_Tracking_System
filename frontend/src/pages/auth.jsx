@@ -578,7 +578,7 @@ export function AuthWizard() {
                 </Panel>
               ) : (
                 <form onSubmit={doLinkGithub} className="mt-4 space-y-3">
-                  <Field label="GitHub username" hint="or use the OAuth redirect">
+                  <Field label="GitHub username" hint="your public GitHub handle">
                     <Input
                       value={githubUsername}
                       onChange={(e) => setGithubUsername(e.target.value)}
@@ -589,20 +589,6 @@ export function AuthWizard() {
                   {error && <p className="font-mono text-xs font-bold text-gred">▲ {error}</p>}
                   <div className="flex flex-wrap gap-3">
                     <Button type="submit" variant="ink" loading={linkingGithub}>Link account</Button>
-                    <Button
-                      type="button"
-                      variant="paper"
-                      onClick={async () => {
-                        try {
-                          const { oauth_url } = await api.githubLoginUrl();
-                          window.location.href = oauth_url;
-                        } catch {
-                          setError("Could not start the GitHub OAuth flow — link your username manually instead.");
-                        }
-                      }}
-                    >
-                      Use GitHub OAuth ↗
-                    </Button>
                   </div>
                 </form>
               )}
