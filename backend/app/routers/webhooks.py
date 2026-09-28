@@ -22,6 +22,7 @@ router = APIRouter(prefix="/webhooks", tags=["Webhooks"])
 
 
 @router.post("/github", response_model=WebhookResponse, summary="GitHub Webhook Receiver")
+@router.post("/github/", response_model=WebhookResponse, include_in_schema=False)
 async def github_webhook_receiver(
     request: Request,
     x_github_event: Optional[str] = Header("ping", alias="X-GitHub-Event"),
@@ -49,13 +50,20 @@ async def github_webhook_receiver(
             detail="Invalid GitHub webhook signature. Request rejected."
         )
 
-    # 2. Parse JSON payload
+    # 2. Parse payload — supports both application/json and application/x-www-form-urlencoded
+    content_type = request.headers.get("content-type", "")
     try:
-        payload = json.loads(raw_body.decode("utf-8")) if raw_body else {}
+        if "application/x-www-form-urlencoded" in content_type:
+            from urllib.parse import parse_qs
+            parsed_form = parse_qs(raw_body.decode("utf-8"))
+            payload_str = parsed_form.get("payload", ["{}"])[0]
+            payload = json.loads(payload_str)
+        else:
+            payload = json.loads(raw_body.decode("utf-8")) if raw_body else {}
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Malformed JSON payload: {str(e)}"
+            detail=f"Malformed payload: {str(e)}"
         )
 
     action = payload.get("action")

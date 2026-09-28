@@ -189,15 +189,27 @@ export const api = {
 /* ------------------------------------------------------------------ */
 
 /** GitHub PR / issue URLs are derived from the repository brief + GitHub ids. */
-export const githubIssueUrl = (repoBrief, issue) =>
-  repoBrief?.github_repo_url
-    ? `${repoBrief.github_repo_url.replace(/\/$/, "")}/issues/${issue.github_issue_id}`
-    : null;
+/** GitHub PR / issue URLs are derived from the repository brief + GitHub ids. */
+export const githubIssueUrl = (repoBrief, issue) => {
+  if (!repoBrief?.github_repo_url) return null;
+  const base = repoBrief.github_repo_url.replace(/\/$/, "");
+  // GitHub issue numbers are sequential 1..N. Numbers > 1,000,000 are internal GitHub entity IDs.
+  if (issue?.number) return `${base}/issues/${issue.number}`;
+  if (issue?.github_issue_id && Number(issue.github_issue_id) < 1000000) {
+    return `${base}/issues/${issue.github_issue_id}`;
+  }
+  return `${base}/issues`;
+};
 
-export const githubPrUrl = (repoBrief, pr) =>
-  repoBrief?.github_repo_url
-    ? `${repoBrief.github_repo_url.replace(/\/$/, "")}/pull/${pr.github_pr_id}`
-    : null;
+export const githubPrUrl = (repoBrief, pr) => {
+  if (!repoBrief?.github_repo_url) return null;
+  const base = repoBrief.github_repo_url.replace(/\/$/, "");
+  if (pr?.number) return `${base}/pull/${pr.number}`;
+  if (pr?.github_pr_id && Number(pr.github_pr_id) < 1000000) {
+    return `${base}/pull/${pr.github_pr_id}`;
+  }
+  return `${base}/pulls`;
+};
 
 /**
  * Returns registered repositories for event filtering.

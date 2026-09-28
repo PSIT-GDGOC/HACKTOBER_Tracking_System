@@ -122,7 +122,32 @@ def _handle_issues_event(payload: Dict[str, Any], repo: Optional[Repository], db
     label_names = [lbl["name"] for lbl in issue_data.get("labels", []) if isinstance(lbl, dict) and "name" in lbl]
     difficulty, category, tech_tags = _infer_issue_metadata(label_names)
 
-    if not issue and repo:
+    # If repo wasn't matched upstream, attempt to find or auto-create it now
+    if not repo:
+        repo_data = payload.get("repository", {})
+        repo_name = repo_data.get("name")
+        if repo_name:
+            repo = db.query(Repository).filter(Repository.name == repo_name).first()
+            if not repo:
+                try:
+                    from app.services.org_sync_service import sync_single_repo_from_webhook
+                    repo = sync_single_repo_from_webhook(db=db, repo_data=repo_data)
+                except Exception as e:
+                    logger.warning("Error auto-creating repo for issue webhook: %s", e)
+
+    if not repo:
+        logger.error(
+            "Cannot process issue #%s: Repository '%s' could not be resolved or created in DB",
+            gh_issue_id, payload.get("repository", {}).get("name")
+        )
+        return {
+            "status": "error",
+            "event": "issues",
+            "action": action,
+            "detail": f"Repository '{payload.get('repository', {}).get('name')}' not registered in platform DB."
+        }
+
+    if not issue:
         issue = Issue(
             repo_id=repo.id,
             github_issue_id=gh_issue_id,
