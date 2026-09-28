@@ -264,7 +264,11 @@ export function AuthWizard() {
       setPasswordError("Please create a password for your account before entering the dashboard.");
       return;
     }
-    await refreshUser().catch(() => {});
+    const updatedUser = await refreshUser().catch(() => null);
+    if (updatedUser?.role === "student" && !updatedUser?.github_username && !linked && !githubUsername.trim()) {
+      setError("Linking your GitHub account is required before entering the dashboard.");
+      return;
+    }
     nav("/dashboard");
   };
 
@@ -649,7 +653,16 @@ export function Login() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState(null);
+  const [successMsg, setSuccessMsg] = useState(null);
   const [pending, setPending] = useState(false);
+
+  /* Forgot password flow state: 'login' | 'forgot_request' | 'forgot_reset' */
+  const [mode, setMode] = useState("login");
+  const [resetIdentifier, setResetIdentifier] = useState("");
+  const [otp, setOtp] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [maskedEmail, setMaskedEmail] = useState("");
 
   /** Where RequireRole bounced us from, so we can send the user back there. */
   const from = useLocation().state?.from;
@@ -660,18 +673,74 @@ export function Login() {
     if (!id) return setError("Enter your roll number or email.");
     if (!password.trim()) return setError("Enter your account password.");
     setError(null);
+    setSuccessMsg(null);
     setPending(true);
     try {
       const user = await login(id, password.trim());
-      if (user && user.role === "student" && !user.verified) {
-        logout();
-        setError("Your account is not verified. You must complete ID card verification before logging into the system.");
-        return;
+      if (user && user.role === "student") {
+        if (!user.verified) {
+          logout();
+          setError("Your account is not verified. You must complete ID card verification before logging into the system.");
+          return;
+        }
+        if (!user.github_username) {
+          logout();
+          setError("GitHub account is required. You must link your GitHub username before signing in.");
+          return;
+        }
       }
       nav(from && from.startsWith("/dashboard") ? from : "/dashboard");
     } catch (err) {
       const msg = err?.detail || err?.message || "Invalid roll number or password.";
       setError(msg);
+    } finally {
+      setPending(false);
+    }
+  };
+
+  const handleRequestOtp = async (e) => {
+    e.preventDefault();
+    const id = resetIdentifier.trim();
+    if (!id) return setError("Enter your roll number or email.");
+    setError(null);
+    setSuccessMsg(null);
+    setPending(true);
+    try {
+      const res = await api.forgotPassword({ identifier: id });
+      setMaskedEmail(res.email);
+      setSuccessMsg(res.message);
+      setMode("forgot_reset");
+    } catch (err) {
+      setError(err?.detail || err?.message || "Failed to send reset code. Please check your roll number or email.");
+    } finally {
+      setPending(false);
+    }
+  };
+
+  const handleResetPassword = async (e) => {
+    e.preventDefault();
+    if (!otp.trim() || otp.trim().length !== 6) return setError("Enter the 6-digit verification code sent to your email.");
+    if (newPassword.length < 8) return setError("Password must be at least 8 characters long.");
+    const hasLetter = /[a-zA-Z]/.test(newPassword);
+    const hasNonLetter = /[^a-zA-Z]/.test(newPassword);
+    if (!hasLetter || !hasNonLetter) return setError("Password must include at least one letter and one number or symbol.");
+    if (newPassword !== confirmNewPassword) return setError("Passwords do not match.");
+
+    setError(null);
+    setSuccessMsg(null);
+    setPending(true);
+    try {
+      const res = await api.resetPassword({
+        identifier: resetIdentifier.trim(),
+        otp: otp.trim(),
+        new_password: newPassword,
+      });
+      setSuccessMsg(res.message || "Password changed successfully! You can now log in with your new password.");
+      setIdentifier(resetIdentifier.trim());
+      setPassword("");
+      setMode("login");
+    } catch (err) {
+      setError(err?.detail || err?.message || "Failed to reset password. Please check your verification code.");
     } finally {
       setPending(false);
     }
@@ -691,54 +760,188 @@ export function Login() {
             </div>
           </div>
 
-          <h1 className="mt-6 font-display text-3xl font-extrabold uppercase leading-none tracking-tight">Log in</h1>
-          <p className="mt-2 text-sm text-ink-soft">
-            Enter your PSIT roll number and password to access your dashboard.
-          </p>
+          {/* ──────────────── MODE: LOGIN ──────────────── */}
+          {mode === "login" && (
+            <>
+              <h1 className="mt-6 font-display text-3xl font-extrabold uppercase leading-none tracking-tight">Log in</h1>
+              <p className="mt-2 text-sm text-ink-soft">
+                Enter your PSIT roll number and password to access your dashboard.
+              </p>
 
-          <form onSubmit={submit} className="mt-6 space-y-4">
-            <Field label="Roll number or email">
-              <Input
-                value={identifier}
-                onChange={(e) => setIdentifier(e.target.value)}
-                placeholder="2200320100001"
-                className="font-mono"
-                autoFocus
-              />
-            </Field>
+              {successMsg && (
+                <div className="mt-4 border-[2px] border-ink bg-ggreen-light p-3 text-xs font-mono font-bold text-ink">
+                  ✓ {successMsg}
+                </div>
+              )}
 
-            <Field label="Password">
-              <div className="relative">
-                <Input
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  className="font-mono pr-14"
-                />
+              <form onSubmit={submit} className="mt-6 space-y-4">
+                <Field label="Roll number or email">
+                  <Input
+                    value={identifier}
+                    onChange={(e) => setIdentifier(e.target.value)}
+                    placeholder="2200320100001"
+                    className="font-mono"
+                    autoFocus
+                  />
+                </Field>
+
+                <Field
+                  label="Password"
+                  hint={
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setError(null);
+                        setSuccessMsg(null);
+                        setResetIdentifier(identifier);
+                        setMode("forgot_request");
+                      }}
+                      className="font-mono font-bold uppercase text-gblue underline decoration-dotted hover:text-ink"
+                    >
+                      Forgot password?
+                    </button>
+                  }
+                >
+                  <div className="relative">
+                    <Input
+                      type={showPassword ? "text" : "password"}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder="••••••••"
+                      className="font-mono pr-14"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono font-bold uppercase text-ink-soft hover:text-ink"
+                    >
+                      {showPassword ? "Hide" : "Show"}
+                    </button>
+                  </div>
+                </Field>
+
+                {error && <p className="font-mono text-xs font-bold text-gred">▲ {error}</p>}
+
+                <Button type="submit" variant="blue" size="lg" loading={pending} className="w-full">
+                  Log in →
+                </Button>
+              </form>
+
+              <p className="mt-5 text-center text-sm text-ink-soft">
+                New here?{" "}
+                <Link to="/join" className="font-bold underline decoration-gblue decoration-2 underline-offset-2">
+                  Create an account
+                </Link>
+              </p>
+            </>
+          )}
+
+          {/* ──────────────── MODE: FORGOT_REQUEST ──────────────── */}
+          {mode === "forgot_request" && (
+            <>
+              <h1 className="mt-6 font-display text-3xl font-extrabold uppercase leading-none tracking-tight">Forgot Password</h1>
+              <p className="mt-2 text-sm text-ink-soft">
+                Enter your registered PSIT roll number or email. We will send a 6-digit verification code to your email.
+              </p>
+
+              <form onSubmit={handleRequestOtp} className="mt-6 space-y-4">
+                <Field label="Roll number or email">
+                  <Input
+                    value={resetIdentifier}
+                    onChange={(e) => setResetIdentifier(e.target.value)}
+                    placeholder="2200320100001 or student@psit.ac.in"
+                    className="font-mono"
+                    autoFocus
+                  />
+                </Field>
+
+                {error && <p className="font-mono text-xs font-bold text-gred">▲ {error}</p>}
+
+                <Button type="submit" variant="yellow" size="lg" loading={pending} className="w-full">
+                  Send Reset Code →
+                </Button>
+
                 <button
                   type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono font-bold uppercase text-ink-soft hover:text-ink"
+                  onClick={() => {
+                    setError(null);
+                    setSuccessMsg(null);
+                    setMode("login");
+                  }}
+                  className="w-full text-center font-mono text-xs font-bold uppercase text-ink-soft hover:text-ink underline"
                 >
-                  {showPassword ? "Hide" : "Show"}
+                  ← Back to Log in
                 </button>
-              </div>
-            </Field>
+              </form>
+            </>
+          )}
 
-            {error && <p className="font-mono text-xs font-bold text-gred">▲ {error}</p>}
+          {/* ──────────────── MODE: FORGOT_RESET ──────────────── */}
+          {mode === "forgot_reset" && (
+            <>
+              <h1 className="mt-6 font-display text-3xl font-extrabold uppercase leading-none tracking-tight">Set New Password</h1>
+              <p className="mt-2 text-sm text-ink-soft">
+                Enter the 6-digit verification code sent to your email ({maskedEmail || resetIdentifier}) and your new password.
+              </p>
 
-            <Button type="submit" variant="blue" size="lg" loading={pending} className="w-full">
-              Log in →
-            </Button>
-          </form>
+              {successMsg && (
+                <div className="mt-4 border-[2px] border-ink bg-gyellow-light p-3 text-xs font-mono font-bold text-ink">
+                  ✉ {successMsg}
+                </div>
+              )}
 
-          <p className="mt-5 text-center text-sm text-ink-soft">
-            New here?{" "}
-            <Link to="/join" className="font-bold underline decoration-gblue decoration-2 underline-offset-2">
-              Create an account
-            </Link>
-          </p>
+              <form onSubmit={handleResetPassword} className="mt-6 space-y-4">
+                <Field label="6-Digit Verification Code" hint="check your email inbox">
+                  <Input
+                    value={otp}
+                    onChange={(e) => setOtp(e.target.value.trim())}
+                    placeholder="123456"
+                    maxLength={6}
+                    className="font-mono tracking-widest text-center text-lg font-bold"
+                    autoFocus
+                  />
+                </Field>
+
+                <Field label="New Password" hint="min. 8 chars with letters & numbers">
+                  <Input
+                    type="password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="New password"
+                    className="font-mono"
+                  />
+                </Field>
+
+                <Field label="Confirm New Password">
+                  <Input
+                    type="password"
+                    value={confirmNewPassword}
+                    onChange={(e) => setConfirmNewPassword(e.target.value)}
+                    placeholder="Confirm new password"
+                    className="font-mono"
+                  />
+                </Field>
+
+                {error && <p className="font-mono text-xs font-bold text-gred">▲ {error}</p>}
+
+                <Button type="submit" variant="green" size="lg" loading={pending} className="w-full">
+                  Update Password &amp; Save →
+                </Button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setError(null);
+                    setSuccessMsg(null);
+                    setMode("login");
+                  }}
+                  className="w-full text-center font-mono text-xs font-bold uppercase text-ink-soft hover:text-ink underline"
+                >
+                  ← Back to Log in
+                </button>
+              </form>
+            </>
+          )}
         </Panel>
       </div>
     </div>

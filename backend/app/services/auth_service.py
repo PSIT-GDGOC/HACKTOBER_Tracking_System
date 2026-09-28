@@ -197,6 +197,96 @@ def set_user_password(db: Session, user: User, password: str) -> User:
     return user
 
 
+def request_password_reset_otp(db: Session, identifier: str) -> Tuple[User, str]:
+    """Find user by roll number or email, generate 6-digit OTP, store hash and send email."""
+    clean_id = identifier.strip()
+    user = (
+        db.query(User)
+        .filter(
+            (User.psit_roll_no.ilike(clean_id)) | (User.email.ilike(clean_id))
+        )
+        .first()
+    )
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No registered account found matching identifier '{identifier}'."
+        )
+
+    # Generate 6-digit numeric code (e.g. 100000 to 999999)
+    otp_num = secrets.randbelow(900_000) + 100_000
+    otp_code = str(otp_num)
+
+    # Hash OTP code and set 15 minute expiration
+    user.reset_otp_hash = hash_password(otp_code)
+    user.reset_otp_expires = datetime.now(timezone.utc) + timedelta(minutes=15)
+    db.commit()
+    db.refresh(user)
+
+    # Send email
+    from app.services.email_service import send_password_reset_otp_email
+    send_password_reset_otp_email(to_email=user.email, roll_no=user.psit_roll_no, otp_code=otp_code)
+
+    return user, otp_code
+
+
+def reset_password_with_otp(db: Session, identifier: str, otp: str, new_password: str) -> User:
+    """Verify OTP and update user's account password in the database."""
+    clean_id = identifier.strip()
+    clean_otp = otp.strip()
+
+    user = (
+        db.query(User)
+        .filter(
+            (User.psit_roll_no.ilike(clean_id)) | (User.email.ilike(clean_id))
+        )
+        .first()
+    )
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No account found matching '{identifier}'."
+        )
+
+    if not user.reset_otp_hash or not user.reset_otp_expires:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No password reset request found. Please request a reset code first."
+        )
+
+    # Check expiration (handle timezone-aware / naive datetimes)
+    now_utc = datetime.now(timezone.utc)
+    expires_at = user.reset_otp_expires
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+
+    if now_utc > expires_at:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The password reset code has expired. Please request a new code."
+        )
+
+    # Verify OTP
+    if not verify_password(clean_otp, user.reset_otp_hash):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid verification code. Please check the code sent to your email."
+        )
+
+    # Validate new password strength
+    validate_password_strength(new_password)
+
+    # Update password in DB
+    user.password_hash = hash_password(new_password)
+    user.reset_otp_hash = None
+    user.reset_otp_expires = None
+
+    db.commit()
+    db.refresh(user)
+    logger.info("Password successfully reset via OTP for user %s (id=%s).", user.psit_roll_no, user.id)
+    return user
+
+
 def authenticate_user(db: Session, identifier: str, password: Optional[str] = None) -> User:
     """Find user by roll number or email and verify password if set."""
     clean_id = identifier.strip()

@@ -57,6 +57,27 @@ class SetPasswordResponse(BaseModel):
     message: str = "Password set successfully."
 
 
+class ForgotPasswordRequest(BaseModel):
+    identifier: str = Field(..., description="PSIT roll number or email address")
+
+
+class ForgotPasswordResponse(BaseModel):
+    success: bool = True
+    message: str
+    email: str
+
+
+class ResetPasswordRequest(BaseModel):
+    identifier: str = Field(..., description="PSIT roll number or email address")
+    otp: str = Field(..., min_length=6, max_length=6, description="6-digit OTP code received via email")
+    new_password: str = Field(..., min_length=8, max_length=128, description="New strong password")
+
+
+class ResetPasswordResponse(BaseModel):
+    success: bool = True
+    message: str = "Password reset successfully. You can now log in with your new password."
+
+
 class TokenResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"

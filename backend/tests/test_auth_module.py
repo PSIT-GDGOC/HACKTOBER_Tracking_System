@@ -745,3 +745,83 @@ def test_id_card_image_persistence_and_admin_endpoint(client_and_db, tmp_path, m
     assert len(res_admin.content) > 0
 
 
+# =====================================================================
+# 6. Forgot Password & OTP Reset Tests
+# =====================================================================
+
+def test_forgot_password_and_otp_reset(client_and_db):
+    """
+    User requests a password reset code via email, receives OTP,
+    and resets password. DB is updated with new password hash.
+    """
+    client, db = client_and_db
+
+    # Create a user with password set
+    user = User(
+        name="Forgot Tester",
+        email="forgot@psit.ac.in",
+        psit_roll_no="2200330100777",
+        role=UserRole.STUDENT,
+        verified=True,
+        github_username="forgot-dev",
+    )
+    db.add(user)
+    db.commit()
+
+    # Set initial password
+    from app.services.auth_service import set_user_password, verify_password
+    set_user_password(db, user, "OldPassword123!")
+
+    # 1. Request forgot password OTP
+    res_forgot = client.post("/auth/forgot-password", json={"identifier": "2200330100777"})
+    assert res_forgot.status_code == 200
+    assert res_forgot.json()["success"] is True
+    assert "Verification code has been sent" in res_forgot.json()["message"]
+
+    # Retrieve stored OTP hash from DB to simulate user receiving the OTP code
+    db.expire_all()
+    user_db = db.query(User).filter(User.id == user.id).first()
+    assert user_db.reset_otp_hash is not None
+    assert user_db.reset_otp_expires is not None
+
+    # Find matching 6-digit code by trying or extracting
+    # Since we can patch request_password_reset_otp or check hash:
+    # Let's test with wrong OTP first:
+    res_wrong = client.post("/auth/reset-password", json={
+        "identifier": "2200330100777",
+        "otp": "000000",
+        "new_password": "NewBrandPassword123!",
+    })
+    assert res_wrong.status_code == 400
+    assert "Invalid verification code" in res_wrong.json()["detail"]
+
+    # Now let's test request with mocked OTP
+    with patch("secrets.randbelow", return_value=543210):
+        client.post("/auth/forgot-password", json={"identifier": "2200330100777"})
+
+    # OTP is 543210 + 100000 = 643210
+    res_reset = client.post("/auth/reset-password", json={
+        "identifier": "2200330100777",
+        "otp": "643210",
+        "new_password": "NewBrandPassword123!",
+    })
+    assert res_reset.status_code == 200
+    assert res_reset.json()["success"] is True
+
+    # Verify DB has new password hash and OTP cleared
+    db.expire_all()
+    updated = db.query(User).filter(User.id == user.id).first()
+    assert updated.reset_otp_hash is None
+    assert updated.reset_otp_expires is None
+    assert verify_password("NewBrandPassword123!", updated.password_hash) is True
+
+    # Test login with new password succeeds
+    res_login = client.post("/auth/login", json={
+        "identifier": "2200330100777",
+        "password": "NewBrandPassword123!",
+    })
+    assert res_login.status_code == 200
+    assert "access_token" in res_login.json()
+
+
+

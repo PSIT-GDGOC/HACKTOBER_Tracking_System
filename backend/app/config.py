@@ -25,6 +25,13 @@ class Settings(BaseSettings):
     GITHUB_CLIENT_SECRET: str = ""
     GITHUB_OAUTH_REDIRECT_URI: str = "https://hacktober-tracking-system-ocai.vercel.app/#/auth/callback"
 
+    # Email / SMTP Settings (for password reset OTPs)
+    SMTP_HOST: str = ""
+    SMTP_PORT: int = 587
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = "noreply@gdgoc-psit.ac.in"
+
     # PSIT Portal Integration
     PSIT_PORTAL_BASE_URL: str = "https://www.psit.ac.in/op"
     ERP_API_URL: str = ""

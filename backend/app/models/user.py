@@ -55,6 +55,8 @@ class User(Base):
     github_username = Column(String(100), unique=True, index=True, nullable=True)
     github_id = Column(String(100), unique=True, nullable=True)
     password_hash = Column(String(255), nullable=True)
+    reset_otp_hash = Column(String(255), nullable=True)
+    reset_otp_expires = Column(DateTime, nullable=True)
     role = Column(
         Enum(UserRole, values_callable=lambda x: [e.value for e in x], name="userrole"),
         default=UserRole.STUDENT,

@@ -130,6 +130,8 @@ export const api = {
   me: () => request("/auth/me"),
   verifyId: (body) => request("/auth/verify-id", { method: "POST", body }),
   setPassword: (body) => request("/auth/set-password", { method: "POST", body }), // { password }
+  forgotPassword: (body) => request("/auth/forgot-password", { method: "POST", body }), // { identifier }
+  resetPassword: (body) => request("/auth/reset-password", { method: "POST", body }), // { identifier, otp, new_password }
   pendingVerifications: (params = {}) =>
     request(`/auth/pending-verifications${qs({ skip: 0, limit: 100, ...params })}`),
   verifyManual: (studentId, body) =>

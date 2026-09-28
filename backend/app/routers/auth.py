@@ -23,12 +23,16 @@ from app.db import get_db
 from app.dependencies import get_current_user, require_roles
 from app.models import User, UserRole
 from app.schemas.auth import (
+    ForgotPasswordRequest,
+    ForgotPasswordResponse,
     GitHubOAuthCallbackRequest,
     GitHubOAuthLinkRequest,
     GitHubOAuthLinkResponse,
     LoginRequest,
     ManualReviewActionRequest,
     ManualReviewItemResponse,
+    ResetPasswordRequest,
+    ResetPasswordResponse,
     SetPasswordRequest,
     SetPasswordResponse,
     SignupRequest,
@@ -46,6 +50,8 @@ from app.services.auth_service import (
     list_pending_verifications,
     process_id_card_verification,
     register_student,
+    request_password_reset_otp,
+    reset_password_with_otp,
     review_manual_verification,
     set_user_password,
 )
@@ -127,6 +133,45 @@ def set_password(
     return SetPasswordResponse(
         success=True,
         message="Password set successfully. You can now use this password to log in."
+    )
+
+
+@router.post("/forgot-password", response_model=ForgotPasswordResponse, summary="Request 6-digit password reset OTP via email")
+def forgot_password(
+    payload: ForgotPasswordRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Send a 6-digit password reset OTP code to the registered student's email address.
+    Code is valid for 15 minutes.
+    """
+    user, _ = request_password_reset_otp(db=db, identifier=payload.identifier)
+    parts = user.email.split("@")
+    masked_email = parts[0][0] + "***" + parts[0][-1] + "@" + parts[1] if len(parts[0]) > 2 else user.email
+    return ForgotPasswordResponse(
+        success=True,
+        message=f"Verification code has been sent to your registered email ({masked_email}). Please check your inbox.",
+        email=masked_email,
+    )
+
+
+@router.post("/reset-password", response_model=ResetPasswordResponse, summary="Reset password using email OTP")
+def reset_password(
+    payload: ResetPasswordRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Verify the 6-digit OTP code and set a new account password in the database.
+    """
+    reset_password_with_otp(
+        db=db,
+        identifier=payload.identifier,
+        otp=payload.otp,
+        new_password=payload.new_password,
+    )
+    return ResetPasswordResponse(
+        success=True,
+        message="Your password has been changed successfully in the database. You can now log in with your new password.",
     )
 
 

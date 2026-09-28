@@ -54,6 +54,8 @@ async def lifespan(app: FastAPI):
                 conn.execute(text("ALTER TABLE pull_requests ALTER COLUMN github_pr_id TYPE BIGINT;"))
                 conn.execute(text("ALTER TABLE webhook_jobs ADD COLUMN IF NOT EXISTS delivery_id VARCHAR(100);"))
                 conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_webhook_jobs_delivery_id ON webhook_jobs (delivery_id);"))
+                conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_otp_hash VARCHAR(255);"))
+                conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_otp_expires TIMESTAMP;"))
                 conn.commit()
                 logger.info("Startup DB check: Schema auto-migrations applied successfully.")
     except Exception as e:
