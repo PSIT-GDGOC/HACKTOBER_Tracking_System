@@ -71,21 +71,41 @@ async def github_webhook_receiver(
             data={"zen": zen}
         )
 
-    # ── Org webhook: new repository created ───────────────────────────────────
-    # When a new repo is created in the PSIT-GDGOC org, GitHub fires:
-    #   X-GitHub-Event: repository  +  action: created
-    # We instantly add it to the DB so it shows in the Repository Hub.
-    if x_github_event == "repository" and action == "created":
+    # ── Org webhook: repository lifecycle (create, edit, rename, delete, archive) ───
+    if x_github_event == "repository":
         repo_data = payload.get("repository", {})
-        if repo_data:
-            from app.services.org_sync_service import sync_single_repo_from_webhook
-            new_repo = sync_single_repo_from_webhook(db=db, repo_data=repo_data)
+        repo_name = repo_data.get("name", "unknown")
+
+        # 1. Removal events: deleted, archived, privatized
+        if action in ("deleted", "archived", "privatized"):
+            from app.services.org_sync_service import delete_repo_from_webhook
+            deleted_name = delete_repo_from_webhook(db=db, repo_data=repo_data)
             return WebhookResponse(
                 status="success",
                 event=x_github_event,
                 action=action,
-                detail=f"Org repo '{repo_data.get('name')}' {'added to Repository Hub' if new_repo else 'skipped (excluded)'}",
-                data={"repo_id": new_repo.id if new_repo else None, "repo_name": repo_data.get("name")}
+                detail=f"Org repo '{repo_name}' {'removed from Repository Hub' if deleted_name else 'not in DB'}",
+                data={"repo_name": repo_name, "action": action, "removed": bool(deleted_name)}
+            )
+
+        # 2. Add / Update events: created, edited, renamed, unarchived, publicized
+        elif action in ("created", "edited", "renamed", "unarchived", "publicized"):
+            from app.services.org_sync_service import sync_single_repo_from_webhook
+            # If repo was renamed, GitHub sends changes.repository.name.from
+            changes = payload.get("changes", {})
+            old_name = changes.get("repository", {}).get("name", {}).get("from")
+            updated_repo = sync_single_repo_from_webhook(db=db, repo_data=repo_data, old_name=old_name)
+            return WebhookResponse(
+                status="success",
+                event=x_github_event,
+                action=action,
+                detail=f"Org repo '{repo_name}' {'synced to Repository Hub' if updated_repo else 'skipped (excluded)'}",
+                data={
+                    "repo_id": updated_repo.id if updated_repo else None,
+                    "repo_name": repo_name,
+                    "platform": updated_repo.platform.value if updated_repo else None,
+                    "action": action
+                }
             )
 
     # 3. Persist incoming webhook event with idempotency check

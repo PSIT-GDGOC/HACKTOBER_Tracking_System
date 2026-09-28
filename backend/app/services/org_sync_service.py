@@ -20,6 +20,7 @@ from typing import Optional, Dict, Any
 from datetime import datetime
 
 import httpx
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -87,9 +88,10 @@ def _detect_platform(repo_name: str, repo_data: Dict[str, Any]) -> PlatformType:
     return PlatformType.WEB
 
 
-def _upsert_repo(db: Session, repo_data: Dict[str, Any]) -> tuple:
+def _upsert_repo(db: Session, repo_data: Dict[str, Any], old_name: Optional[str] = None) -> tuple:
     """
     Insert or update a repository row from GitHub API data.
+    Supports repo renames via old_name or name matching.
 
     Returns:
         (repo: Repository, was_created: bool)
@@ -98,14 +100,17 @@ def _upsert_repo(db: Session, repo_data: Dict[str, Any]) -> tuple:
     html_url = repo_data["html_url"]
     platform = _detect_platform(name, repo_data)
 
-    # Check for existing row by github_repo_url (URL is the stable unique key)
-    existing = db.query(Repository).filter(
-        Repository.github_repo_url == html_url
-    ).first()
+    # Check for existing row: match by URL, current name, or old name if renamed
+    conditions = [Repository.github_repo_url == html_url, Repository.name == name]
+    if old_name:
+        conditions.append(Repository.name == old_name)
+
+    existing = db.query(Repository).filter(or_(*conditions)).first()
 
     if existing:
-        # Update mutable fields in case the repo was renamed
+        # Update mutable fields (handles rename, URL change, platform re-detection)
         existing.name = name
+        existing.github_repo_url = html_url
         existing.platform = platform
         db.commit()
         db.refresh(existing)
@@ -167,6 +172,7 @@ async def fetch_org_repos_from_github() -> list:
 async def sync_org_repos(db: Session) -> Dict[str, Any]:
     """
     Main sync function: fetches all org repos from GitHub and upserts them into DB.
+    Also purges any repositories from DB that were deleted or archived on GitHub.
 
     Skips repos in SKIP_REPOS set.
     Returns a summary dict with counts.
@@ -182,6 +188,7 @@ async def sync_org_repos(db: Session) -> Dict[str, Any]:
             "synced": 0,
             "created": 0,
             "updated": 0,
+            "deleted": 0,
             "skipped": 0,
             "errors": 0,
             "org": org,
@@ -191,6 +198,7 @@ async def sync_org_repos(db: Session) -> Dict[str, Any]:
     updated = 0
     skipped = 0
     errors = 0
+    valid_repo_urls = set()
 
     for repo_data in raw_repos:
         name = repo_data.get("name", "")
@@ -209,6 +217,8 @@ async def sync_org_repos(db: Session) -> Dict[str, Any]:
             skipped += 1
             continue
 
+        valid_repo_urls.add(repo_data.get("html_url"))
+
         try:
             _, was_created = _upsert_repo(db, repo_data)
             if was_created:
@@ -222,43 +232,90 @@ async def sync_org_repos(db: Session) -> Dict[str, Any]:
             logger.error("OrgSync: Error upserting repo '%s': %s", name, e)
             db.rollback()
 
+    # ── Auto-purge deleted or archived repos ──────────────────────────────────
+    purged_count = 0
+    try:
+        org_pattern = f"%github.com/{org}/%"
+        db_repos = db.query(Repository).filter(Repository.github_repo_url.ilike(org_pattern)).all()
+        for r in db_repos:
+            if r.github_repo_url not in valid_repo_urls and r.name not in SKIP_REPOS:
+                logger.info("OrgSync: 🗑️ Purging deleted/archived repo '%s' (%s) from DB", r.name, r.github_repo_url)
+                db.delete(r)
+                purged_count += 1
+        if purged_count > 0:
+            db.commit()
+    except Exception as e:
+        logger.error("OrgSync: Error purging deleted repos: %s", e)
+        db.rollback()
+
     total_synced = created + updated
     logger.info(
-        "OrgSync: Done — %d synced (%d created, %d updated), %d skipped, %d errors",
-        total_synced, created, updated, skipped, errors
+        "OrgSync: Done — %d synced (%d created, %d updated), %d deleted, %d skipped, %d errors",
+        total_synced, created, updated, purged_count, skipped, errors
     )
 
     return {
         "synced": total_synced,
         "created": created,
         "updated": updated,
+        "deleted": purged_count,
         "skipped": skipped,
         "errors": errors,
         "org": org,
     }
 
 
-def sync_single_repo_from_webhook(db: Session, repo_data: Dict[str, Any]) -> Optional[Repository]:
+def delete_repo_from_webhook(db: Session, repo_data: Dict[str, Any]) -> Optional[str]:
     """
-    Instantly add/update a single repository that just appeared via org webhook.
-    Called when X-GitHub-Event: repository + action: created fires.
+    Remove a repository from the database when deleted, archived, or privatized on GitHub.
+    Returns the deleted repo's name, or None if not found.
+    """
+    name = repo_data.get("name", "")
+    html_url = repo_data.get("html_url", "")
 
-    Returns the upserted Repository object, or None if the repo is in SKIP_REPOS.
+    existing = db.query(Repository).filter(
+        or_(Repository.github_repo_url == html_url, Repository.name == name)
+    ).first()
+
+    if existing:
+        deleted_name = existing.name
+        db.delete(existing)
+        db.commit()
+        logger.info("OrgSync webhook: 🗑️ Removed repository '%s' (%s) from platform", deleted_name, html_url)
+        return deleted_name
+
+    logger.info("OrgSync webhook: Repository '%s' not found in DB to delete", name)
+    return None
+
+
+def sync_single_repo_from_webhook(
+    db: Session,
+    repo_data: Dict[str, Any],
+    old_name: Optional[str] = None
+) -> Optional[Repository]:
+    """
+    Instantly add or update a single repository via org webhook.
+    Handles 'created', 'edited', 'renamed', 'unarchived', 'publicized'.
+
+    Returns the upserted Repository object, or None if the repo is skipped/removed.
     """
     name = repo_data.get("name", "")
 
     if name in SKIP_REPOS:
         logger.info("OrgSync webhook: Skipping '%s' (in SKIP_REPOS)", name)
+        # If previously tracked and now in SKIP_REPOS, remove it
+        delete_repo_from_webhook(db, repo_data)
         return None
 
-    if repo_data.get("archived") or repo_data.get("fork"):
-        logger.info("OrgSync webhook: Skipping '%s' (archived or fork)", name)
+    if repo_data.get("archived") or repo_data.get("fork") or repo_data.get("private"):
+        logger.info("OrgSync webhook: Repo '%s' is archived, fork, or private. Removing from DB if present.", name)
+        delete_repo_from_webhook(db, repo_data)
         return None
 
     try:
-        repo, was_created = _upsert_repo(db, repo_data)
-        action = "Created" if was_created else "Updated"
-        logger.info("OrgSync webhook: %s repo '%s' via org webhook", action, name)
+        repo, was_created = _upsert_repo(db, repo_data, old_name=old_name)
+        action_verb = "Created" if was_created else "Updated"
+        logger.info("OrgSync webhook: %s repo '%s' (%s) via org webhook", action_verb, name, repo.platform.value)
         return repo
     except Exception as e:
         logger.error("OrgSync webhook: Error upserting repo '%s': %s", name, e)
