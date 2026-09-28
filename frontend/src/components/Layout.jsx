@@ -1,7 +1,51 @@
 import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { cn } from "@/utils/cn";
-import { api, DEMO_MODE, tokenStore } from "@/lib/api";
+import { api, DEMO_MODE, tokenStore, discoverRepositories } from "@/lib/api";
+
+function RepoSwitcher() {
+  const nav = useNavigate();
+  const location = useLocation();
+  const [repos, setRepos] = useState([]);
+
+  useEffect(() => {
+    discoverRepositories()
+      .then((list) => {
+        if (Array.isArray(list)) setRepos(list);
+      })
+      .catch(() => {});
+  }, []);
+
+  const match = location.pathname.match(/\/dashboard\/repos\/(\d+)/);
+  const searchParams = new URLSearchParams(location.search);
+  const activeRepoId = match ? match[1] : (searchParams.get("repo_id") || "all");
+
+  return (
+    <div className="hidden items-center gap-1.5 sm:flex">
+      <span className="font-mono text-[10px] font-bold uppercase text-ink-soft">Repo:</span>
+      <select
+        value={activeRepoId}
+        onChange={(e) => {
+          const val = e.target.value;
+          if (val === "all") {
+            nav("/dashboard/issues");
+          } else {
+            nav(`/dashboard/repos/${val}`);
+          }
+        }}
+        className="cursor-pointer border-[2px] border-ink bg-gyellow px-2.5 py-1 font-display text-xs font-bold uppercase shadow-[2px_2px_0_0_#101010] hover:-translate-y-0.5"
+        title="Switch repository view"
+      >
+        <option value="all">📦 All Repositories ({repos.length})</option>
+        {repos.map((r) => (
+          <option key={r.id} value={r.id}>
+            📂 {r.name}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
 import { useAuth } from "@/lib/auth";
 import { useData, useDebounced } from "@/lib/hooks";
 import { timeAgo } from "@/lib/format";
@@ -320,6 +364,7 @@ export function AppShell() {
           >
             ⌕ Search everything <kbd className="border-2 border-ink bg-paper-2 px-1.5 py-0.5 text-[10px]">⌘K</kbd>
           </button>
+          <RepoSwitcher />
           <div className="ml-auto flex items-center gap-2">
             <Badge tone={DEMO_MODE ? "yellow" : "green"} dot className="hidden sm:inline-flex">
               {DEMO_MODE ? "api not set" : "live api"}

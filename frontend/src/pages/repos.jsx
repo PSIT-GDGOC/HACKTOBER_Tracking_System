@@ -254,11 +254,17 @@ const PAGE = 20;
 export function PullRequests() {
   const [params, setParams] = useSearchParams();
   const drawers = useDrawers();
+  const [repos, setRepos] = useState([]);
   const [filters, setFilters] = useState({
     status: params.get("status") ?? "",
+    repo_id: params.get("repo_id") ?? "",
     search: "",
     skip: 0,
   });
+
+  useEffect(() => {
+    discoverRepositories().then((list) => { if (Array.isArray(list)) setRepos(list); }).catch(() => {});
+  }, []);
 
   useEffect(() => {
     const open = params.get("open");
@@ -274,6 +280,7 @@ export function PullRequests() {
   const q = useData(
     () => api.pullRequests({
       status: filters.status || undefined,
+      repo_id: filters.repo_id || undefined,
       skip: filters.skip,
       limit: PAGE,
     }),
@@ -285,9 +292,22 @@ export function PullRequests() {
   const page = Math.floor(filters.skip / PAGE) + 1;
   const totalPages = Math.max(1, Math.ceil(total / PAGE));
 
+  const set = (k, v) => setFilters((f) => ({ ...f, [k]: v, skip: 0 }));
+
   const groups = [
     {
-      label: "State", value: filters.status || "all", onChange: (v) => set("status", v === "all" ? "" : v),
+      label: "Repository",
+      value: filters.repo_id || "all",
+      onChange: (v) => set("repo_id", v === "all" ? "" : v),
+      options: [
+        { value: "all", label: "All repos" },
+        ...repos.map((r) => ({ value: String(r.id), label: r.name })),
+      ],
+    },
+    {
+      label: "State",
+      value: filters.status || "all",
+      onChange: (v) => set("status", v === "all" ? "" : v),
       options: [
         { value: "all", label: "Any" }, { value: "open", label: "Open" }, { value: "merged", label: "Merged" },
         { value: "closed", label: "Closed" }, { value: "draft", label: "Draft" },
@@ -305,7 +325,7 @@ export function PullRequests() {
         actions={<UpdatedPill lastUpdated={q.lastUpdated} />}
       />
       <div className="mb-5">
-        <FilterBar groups={groups} count={total} onReset={() => setFilters({ status: "", search: "", skip: 0 })} />
+        <FilterBar groups={groups} count={total} onReset={() => setFilters({ status: "", repo_id: "", search: "", skip: 0 })} />
       </div>
       {q.loading && <LoadingBlock rows={5} />}
       {q.error && <ErrorState message={q.error} onRetry={q.refetch} />}
