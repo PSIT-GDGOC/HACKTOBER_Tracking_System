@@ -43,6 +43,22 @@ async def lifespan(app: FastAPI):
     from app.db import SessionLocal
     from app.services.org_sync_service import sync_org_repos
 
+    # ── Startup: self-heal DB schema (BIGINT columns, delivery_id) ────────────
+    from app.db import engine
+    from sqlalchemy import text
+    try:
+        if engine.dialect.name == "postgresql":
+            logger.info("Startup DB check: ensuring BigInteger columns on PostgreSQL...")
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE issues ALTER COLUMN github_issue_id TYPE BIGINT;"))
+                conn.execute(text("ALTER TABLE pull_requests ALTER COLUMN github_pr_id TYPE BIGINT;"))
+                conn.execute(text("ALTER TABLE webhook_jobs ADD COLUMN IF NOT EXISTS delivery_id VARCHAR(100);"))
+                conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_webhook_jobs_delivery_id ON webhook_jobs (delivery_id);"))
+                conn.commit()
+                logger.info("Startup DB check: Schema auto-migrations applied successfully.")
+    except Exception as e:
+        logger.warning("Startup DB check (non-fatal): %s", e)
+
     # ── Startup: immediate one-shot sync ──────────────────────────────────────
     logger.info("Startup: Running initial PSIT-GDGOC org repo sync...")
     try:
@@ -131,6 +147,39 @@ def test_db():
     except Exception as e:
         import traceback
         return {"db": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+
+@app.get("/debug/sync-issues", tags=["System"])
+def debug_sync_issues():
+    """Temporary debug: run issues sync and return real error if 500."""
+    import traceback
+    try:
+        from app.db import SessionLocal
+        from app.services.issue_service import sync_issues_from_github
+        db = SessionLocal()
+        result = sync_issues_from_github(db=db)
+        db.close()
+        return {"status": "ok", "result": result}
+    except Exception as e:
+        return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
+
+
+@app.get("/debug/db-schema", tags=["System"])
+def debug_db_schema():
+    """Temporary debug: inspect actual columns in the issues table on live DB."""
+    import traceback
+    try:
+        from app.db import SessionLocal
+        from sqlalchemy import text
+        db = SessionLocal()
+        rows = db.execute(text(
+            "SELECT column_name, data_type, is_nullable FROM information_schema.columns "
+            "WHERE table_name='issues' ORDER BY ordinal_position"
+        )).fetchall()
+        db.close()
+        return {"issues_columns": [dict(r._mapping) for r in rows]}
+    except Exception as e:
+        return {"error": str(e), "traceback": traceback.format_exc()}
 
 
 # Include Routers — dual-mount on root and /api for Vercel reverse proxy and direct backend compatibility

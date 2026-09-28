@@ -1,6 +1,6 @@
 import enum
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Enum, JSON, Index
+from sqlalchemy import Column, Integer, BigInteger, String, Text, DateTime, ForeignKey, Enum, JSON, Index
 from sqlalchemy.orm import relationship
 from app.db import Base
 
@@ -23,7 +23,7 @@ class Issue(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     repo_id = Column(Integer, ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False, index=True)
-    github_issue_id = Column(Integer, unique=True, index=True, nullable=False)
+    github_issue_id = Column(BigInteger, unique=True, index=True, nullable=False)
     title = Column(String(500), nullable=False)
     description = Column(Text, nullable=True)
     difficulty = Column(

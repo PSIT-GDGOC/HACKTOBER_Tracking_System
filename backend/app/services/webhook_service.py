@@ -84,6 +84,13 @@ def process_webhook_event(event_type: str, payload: Dict[str, Any], db: Session)
         if not repo:
             repo = db.query(Repository).filter(Repository.name == repo_data.get("name")).first()
 
+    if not repo and repo_data.get("name"):
+        try:
+            from app.services.org_sync_service import sync_single_repo_from_webhook
+            repo = sync_single_repo_from_webhook(db=db, repo_data=repo_data)
+        except Exception as e:
+            logger.warning("Could not auto-create repo for webhook event: %s", e)
+
     if event_type == "issues":
         return _handle_issues_event(payload, repo, db)
     elif event_type == "pull_request":
@@ -97,7 +104,7 @@ def process_webhook_event(event_type: str, payload: Dict[str, Any], db: Session)
 
 
 def _handle_issues_event(payload: Dict[str, Any], repo: Optional[Repository], db: Session) -> Dict[str, Any]:
-    """Handle issue lifecycle events (opened, edited, labeled, closed, reopened)."""
+    """Handle issue lifecycle events (opened, edited, labeled, closed, reopened, deleted)."""
     action = payload.get("action")
     issue_data = payload.get("issue", {})
     gh_issue_id = issue_data.get("id")
@@ -106,6 +113,12 @@ def _handle_issues_event(payload: Dict[str, Any], repo: Optional[Repository], db
         return {"status": "error", "event": "issues", "action": action, "detail": "Missing issue data in payload."}
 
     issue = db.query(Issue).filter(Issue.github_issue_id == gh_issue_id).first()
+
+    if issue and action == "deleted":
+        db.delete(issue)
+        db.commit()
+        return {"status": "success", "event": "issues", "action": action, "detail": f"Issue #{gh_issue_id} deleted."}
+
     label_names = [lbl["name"] for lbl in issue_data.get("labels", []) if isinstance(lbl, dict) and "name" in lbl]
     difficulty, category, tech_tags = _infer_issue_metadata(label_names)
 

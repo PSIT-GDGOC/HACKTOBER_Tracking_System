@@ -1,6 +1,6 @@
 import enum
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Enum, Index
+from sqlalchemy import Column, Integer, BigInteger, String, DateTime, ForeignKey, Enum, Index
 from sqlalchemy.orm import relationship
 from app.db import Base
 
@@ -17,7 +17,7 @@ class PullRequest(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     repo_id = Column(Integer, ForeignKey("repositories.id", ondelete="CASCADE"), nullable=False, index=True)
-    github_pr_id = Column(Integer, unique=True, index=True, nullable=False)
+    github_pr_id = Column(BigInteger, unique=True, index=True, nullable=False)
     issue_id = Column(Integer, ForeignKey("issues.id", ondelete="SET NULL"), nullable=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     title = Column(String(500), nullable=False)
