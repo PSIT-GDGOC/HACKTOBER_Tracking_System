@@ -6,9 +6,8 @@
 import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api, discoverRepositories } from "@/lib/api";
-import { useAuth } from "@/lib/auth";
-import { useData, useDebounced } from "@/lib/hooks";
-import { compact, PLATFORM_LABEL, timeAgo } from "@/lib/format";
+import { useData } from "@/lib/hooks";
+import { compact, PLATFORM_LABEL } from "@/lib/format";
 import { PageHeader, UpdatedPill } from "@/components/Layout";
 import {
   EmptyState, ErrorState, LinkButton, LoadingBlock, Pagination, Panel,
@@ -25,12 +24,6 @@ export function Repositories() {
   const { repoId } = useParams();
   const [repos, setRepos] = useState(null);
   const [loadError, setLoadError] = useState(null);
-  const [showAddForm, setShowAddForm] = useState(false);
-  const [newRepo, setNewRepo] = useState({ name: "", github_repo_url: "", platform: "web" });
-  const [addLoading, setAddLoading] = useState(false);
-  const [addError, setAddError] = useState(null);
-  const [syncingAll, setSyncingAll] = useState(false);
-  const [syncMsg, setSyncMsg] = useState(null);
 
   const drawers = useDrawers();
 
@@ -43,42 +36,6 @@ export function Repositories() {
   useEffect(() => {
     fetchRepos();
   }, []);
-
-  const handleAddRepo = async (e) => {
-    e.preventDefault();
-    if (!newRepo.name || !newRepo.github_repo_url) {
-      setAddError("Please fill in both name and GitHub URL.");
-      return;
-    }
-    setAddLoading(true);
-    setAddError(null);
-    try {
-      await api.addRepository(newRepo);
-      setNewRepo({ name: "", github_repo_url: "", platform: "web" });
-      setShowAddForm(false);
-      fetchRepos();
-      setSyncMsg(`Repository '${newRepo.name}' added successfully.`);
-    } catch (err) {
-      setAddError(err?.detail || err?.message || "Failed to add repository.");
-    } finally {
-      setAddLoading(false);
-    }
-  };
-
-
-  const handleSyncAll = async () => {
-    setSyncingAll(true);
-    setSyncMsg(null);
-    try {
-      const res = await api.syncIssues();
-      fetchRepos();
-      setSyncMsg(res?.message ? `${res.message} (${res.synced_count || 0} issues synced)` : "Sync completed.");
-    } catch (err) {
-      setSyncMsg(err?.detail || err?.message || "Sync failed.");
-    } finally {
-      setSyncingAll(false);
-    }
-  };
 
   const repo = repos?.find((r) => String(r.id) === String(repoId));
 
@@ -102,89 +59,9 @@ export function Repositories() {
             >
               GitHub ↗
             </a>
-          ) : (
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                onClick={() => setShowAddForm(!showAddForm)}
-                className="border-[3px] border-ink bg-ggreen px-3.5 py-2 font-display text-xs font-bold uppercase text-paper shadow-[3px_3px_0_0_#101010] hover:-translate-y-0.5"
-              >
-                {showAddForm ? "✕ Cancel" : "+ Add Repo"}
-              </button>
-              <button
-                onClick={handleSyncAll}
-                disabled={syncingAll}
-                className="border-[3px] border-ink bg-gyellow px-3.5 py-2 font-display text-xs font-bold uppercase text-ink shadow-[3px_3px_0_0_#101010] hover:-translate-y-0.5 disabled:opacity-50"
-              >
-                {syncingAll ? "Syncing..." : "Sync All ↻"}
-              </button>
-            </div>
-          )
+          ) : null
         }
       />
-
-      {syncMsg && (
-        <div className="mb-4 border-2 border-ink bg-gyellow-light p-3 font-mono text-xs font-bold">
-          {syncMsg}
-        </div>
-      )}
-
-      {showAddForm && !repoId && (
-        <Panel className="mb-6 p-5">
-          <SectionHeading title="Add New Repository" subtitle="Register a repository to sync issues, PRs, and commits." />
-          {addError && <div className="mb-3 border-2 border-ink bg-gred-light p-2.5 font-mono text-xs font-bold text-gred">{addError}</div>}
-          <form onSubmit={handleAddRepo} className="mt-4 grid gap-4 sm:grid-cols-3">
-            <div>
-              <label className="block font-mono text-xs font-bold uppercase mb-1">Repo Name</label>
-              <input
-                type="text"
-                placeholder="e.g. hacktoberfest-custom"
-                value={newRepo.name}
-                onChange={(e) => setNewRepo({ ...newRepo, name: e.target.value })}
-                className="w-full border-2 border-ink p-2 font-mono text-xs"
-                required
-              />
-            </div>
-            <div>
-              <label className="block font-mono text-xs font-bold uppercase mb-1">GitHub Repo URL</label>
-              <input
-                type="url"
-                placeholder="https://github.com/PSIT-GDGOC/repo-name"
-                value={newRepo.github_repo_url}
-                onChange={(e) => setNewRepo({ ...newRepo, github_repo_url: e.target.value })}
-                className="w-full border-2 border-ink p-2 font-mono text-xs"
-                required
-              />
-            </div>
-            <div>
-              <label className="block font-mono text-xs font-bold uppercase mb-1">Platform</label>
-              <select
-                value={newRepo.platform}
-                onChange={(e) => setNewRepo({ ...newRepo, platform: e.target.value })}
-                className="w-full border-2 border-ink p-2 font-mono text-xs"
-              >
-                <option value="web">🌐 Web</option>
-                <option value="android">📱 Android</option>
-              </select>
-            </div>
-            <div className="sm:col-span-3 flex justify-end gap-2">
-              <button
-                type="button"
-                onClick={() => setShowAddForm(false)}
-                className="border-2 border-ink bg-paper-3 px-4 py-2 font-mono text-xs font-bold uppercase hover:bg-paper-2"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={addLoading}
-                className="border-2 border-ink bg-gblue px-4 py-2 font-mono text-xs font-bold uppercase text-white hover:bg-blue-700 disabled:opacity-50"
-              >
-                {addLoading ? "Adding..." : "Register Repository"}
-              </button>
-            </div>
-          </form>
-        </Panel>
-      )}
 
       {!repoId && (
         <>
@@ -192,17 +69,8 @@ export function Repositories() {
           {!repos && <LoadingBlock rows={4} label="Loading repositories" />}
           {repos && repos.length === 0 && (
             <EmptyState
-              title="No repositories discovered yet"
-              body="Repositories appear once added or synced from GitHub."
-              action={
-                <button
-                  onClick={handleSyncAll}
-                  disabled={syncingAll}
-                  className="border-2 border-ink bg-gyellow px-4 py-2 font-mono text-xs font-bold uppercase"
-                >
-                  Sync from GitHub now ↻
-                </button>
-              }
+              title="No repositories yet"
+              body="Repositories are created by the maintainer on GitHub and will appear here automatically."
             />
           )}
           <div className="grid min-w-0 gap-5 md:grid-cols-2">
@@ -224,8 +92,6 @@ function RepoHub({ repo }) {
   const [tab, setTab] = useState("overview");
   const dash = useData(() => api.repositoryDashboard(repo.id), [repo.id], { pollMs: 60000 });
   const drawers = useDrawers();
-  const [syncing, setSyncing] = useState(false);
-  const [syncMsg, setSyncMsg] = useState(null);
 
   const prs = useData(
     () => api.pullRequests({ repo_id: repo.id, limit: 50 }),
@@ -242,21 +108,6 @@ function RepoHub({ repo }) {
     [repo.id, tab === "overview"],
     { enabled: tab === "overview" },
   );
-
-  const handleSync = async () => {
-    setSyncing(true);
-    setSyncMsg(null);
-    try {
-      const res = await api.syncIssues(repo.id);
-      issues.refetch();
-      dash.refetch();
-      setSyncMsg(res?.message || "GitHub issues synced successfully.");
-    } catch (e) {
-      setSyncMsg(e?.detail || e?.message || "Sync failed. Check repository connection.");
-    } finally {
-      setSyncing(false);
-    }
-  };
 
   // Gracefully fallback so the page never blocks on a dashboard stats error
   const d = dash.data || {
@@ -326,23 +177,9 @@ function RepoHub({ repo }) {
                     <SectionHeading
                       title="Issues in this repo"
                       action={
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={handleSync}
-                            disabled={syncing}
-                            className="border-2 border-ink bg-gyellow px-3 py-1 font-mono text-[11px] font-bold uppercase hover:bg-gyellow-light disabled:opacity-50"
-                          >
-                            {syncing ? "Syncing..." : "Sync from GitHub ↻"}
-                          </button>
-                          <Link to="/dashboard/issues" className="font-mono text-[11px] font-bold uppercase underline">explorer →</Link>
-                        </div>
+                        <Link to="/dashboard/issues" className="font-mono text-[11px] font-bold uppercase underline">explorer →</Link>
                       }
                     />
-                    {syncMsg && (
-                      <div className="mb-3 border-2 border-ink bg-gyellow-light p-2 font-mono text-xs font-bold">
-                        {syncMsg}
-                      </div>
-                    )}
                     {issues.loading && <LoadingBlock rows={3} label="Checking for issues..." />}
                     {!issues.loading && (issues.data?.items || []).length > 0 && (
                       <div className="space-y-2">
@@ -362,17 +199,10 @@ function RepoHub({ repo }) {
                     )}
                     {!issues.loading && (issues.data?.items || []).length === 0 && (
                       <div className="border-2 border-dashed border-paper-3 py-6 text-center">
-                        <p className="font-display text-base font-bold">No issues available in this repository yet</p>
+                        <p className="font-display text-base font-bold">No issues in this repository yet</p>
                         <p className="mt-1 font-mono text-xs text-ink-soft">
-                          Create an issue on GitHub ({repo.github_repo_url || "hacktoberfest-web"}) or click below to sync.
+                          Issues created by the maintainer on GitHub will appear here automatically.
                         </p>
-                        <button
-                          onClick={handleSync}
-                          disabled={syncing}
-                          className="mt-3 border-2 border-ink bg-ink px-4 py-2 font-mono text-xs font-bold text-paper hover:bg-opacity-90 disabled:opacity-50"
-                        >
-                          {syncing ? "Syncing issues from GitHub..." : "Sync from GitHub now ↻"}
-                        </button>
                       </div>
                     )}
                   </Panel>
