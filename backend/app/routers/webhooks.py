@@ -68,54 +68,6 @@ async def github_webhook_receiver(
 
     action = payload.get("action")
 
-    # ── Ping event (sent by GitHub when creating or testing webhooks) ─────────
-    if x_github_event == "ping":
-        zen = payload.get("zen", "pong")
-        return WebhookResponse(
-            status="success",
-            event="ping",
-            action="ping",
-            detail=f"GitHub ping acknowledged: {zen}",
-            data={"zen": zen}
-        )
-
-    # ── Org webhook: repository lifecycle (create, edit, rename, delete, archive) ───
-    if x_github_event == "repository":
-        repo_data = payload.get("repository", {})
-        repo_name = repo_data.get("name", "unknown")
-
-        # 1. Removal events: deleted, archived, privatized
-        if action in ("deleted", "archived", "privatized"):
-            from app.services.org_sync_service import delete_repo_from_webhook
-            deleted_name = delete_repo_from_webhook(db=db, repo_data=repo_data)
-            return WebhookResponse(
-                status="success",
-                event=x_github_event,
-                action=action,
-                detail=f"Org repo '{repo_name}' {'removed from Repository Hub' if deleted_name else 'not in DB'}",
-                data={"repo_name": repo_name, "action": action, "removed": bool(deleted_name)}
-            )
-
-        # 2. Add / Update events: created, edited, renamed, unarchived, publicized
-        elif action in ("created", "edited", "renamed", "unarchived", "publicized"):
-            from app.services.org_sync_service import sync_single_repo_from_webhook
-            # If repo was renamed, GitHub sends changes.repository.name.from
-            changes = payload.get("changes", {})
-            old_name = changes.get("repository", {}).get("name", {}).get("from")
-            updated_repo = sync_single_repo_from_webhook(db=db, repo_data=repo_data, old_name=old_name)
-            return WebhookResponse(
-                status="success",
-                event=x_github_event,
-                action=action,
-                detail=f"Org repo '{repo_name}' {'synced to Repository Hub' if updated_repo else 'skipped (excluded)'}",
-                data={
-                    "repo_id": updated_repo.id if updated_repo else None,
-                    "repo_name": repo_name,
-                    "platform": updated_repo.platform.value if updated_repo else None,
-                    "action": action
-                }
-            )
-
     # 3. Persist incoming webhook event with idempotency check
     job, is_new = create_webhook_job(
         db=db,
@@ -137,6 +89,61 @@ async def github_webhook_receiver(
                 "duplicate": True
             }
         )
+
+    # ── Ping event (sent by GitHub when creating or testing webhooks) ─────────
+    if x_github_event == "ping":
+        zen = payload.get("zen", "pong")
+        job.status = WebhookJobStatus.DONE
+        db.commit()
+        return WebhookResponse(
+            status="success",
+            event="ping",
+            action="ping",
+            detail=f"GitHub ping acknowledged: {zen}",
+            data={"zen": zen, "job_id": job.id}
+        )
+
+    # ── Org webhook: repository lifecycle (create, edit, rename, delete, archive) ───
+    if x_github_event == "repository":
+        repo_data = payload.get("repository", {})
+        repo_name = repo_data.get("name", "unknown")
+
+        # 1. Removal events: deleted, archived, privatized
+        if action in ("deleted", "archived", "privatized"):
+            from app.services.org_sync_service import delete_repo_from_webhook
+            deleted_name = delete_repo_from_webhook(db=db, repo_data=repo_data)
+            job.status = WebhookJobStatus.DONE
+            db.commit()
+            return WebhookResponse(
+                status="success",
+                event=x_github_event,
+                action=action,
+                detail=f"Org repo '{repo_name}' {'removed from Repository Hub' if deleted_name else 'not in DB'}",
+                data={"repo_name": repo_name, "action": action, "removed": bool(deleted_name), "job_id": job.id}
+            )
+
+        # 2. Add / Update events: created, edited, renamed, unarchived, publicized
+        elif action in ("created", "edited", "renamed", "unarchived", "publicized"):
+            from app.services.org_sync_service import sync_single_repo_from_webhook
+            # If repo was renamed, GitHub sends changes.repository.name.from
+            changes = payload.get("changes", {})
+            old_name = changes.get("repository", {}).get("name", {}).get("from")
+            updated_repo = sync_single_repo_from_webhook(db=db, repo_data=repo_data, old_name=old_name)
+            job.status = WebhookJobStatus.DONE
+            db.commit()
+            return WebhookResponse(
+                status="success",
+                event=x_github_event,
+                action=action,
+                detail=f"Org repo '{repo_name}' {'synced to Repository Hub' if updated_repo else 'skipped (excluded)'}",
+                data={
+                    "repo_id": updated_repo.id if updated_repo else None,
+                    "repo_name": repo_name,
+                    "platform": updated_repo.platform.value if updated_repo else None,
+                    "action": action,
+                    "job_id": job.id
+                }
+            )
 
     # 4. Execute through the native job runner
     exec_result = execute_webhook_job(job=job, db=db)

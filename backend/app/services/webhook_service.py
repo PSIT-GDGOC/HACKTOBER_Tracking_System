@@ -179,12 +179,6 @@ def process_webhook_event(event_type: str, payload: Dict[str, Any], db: Session)
         if not repo:
             repo = db.query(Repository).filter(Repository.name == repo_data.get("name")).first()
 
-<<<<<<< HEAD
-    if event_type == "repository":
-        return _handle_repository_event(payload, db)
-    elif event_type == "issues":
-        return _handle_issues_event(payload, repo or _get_or_create_repo_from_payload(payload, db), db)
-=======
     if not repo and repo_data.get("name"):
         try:
             from app.services.org_sync_service import sync_single_repo_from_webhook
@@ -192,15 +186,19 @@ def process_webhook_event(event_type: str, payload: Dict[str, Any], db: Session)
         except Exception as e:
             logger.warning("Could not auto-create repo for webhook event: %s", e)
 
-    if event_type == "issues":
+    if not repo:
+        repo = _get_or_create_repo_from_payload(payload, db)
+
+    if event_type == "repository":
+        return _handle_repository_event(payload, db)
+    elif event_type == "issues":
         return _handle_issues_event(payload, repo, db)
->>>>>>> 7243b73ca8c422da211b2126d3986632dffb6792
     elif event_type == "pull_request":
-        return _handle_pull_request_event(payload, repo or _get_or_create_repo_from_payload(payload, db), db)
+        return _handle_pull_request_event(payload, repo, db)
     elif event_type == "push":
-        return _handle_push_event(payload, repo or _get_or_create_repo_from_payload(payload, db), db)
+        return _handle_push_event(payload, repo, db)
     elif event_type == "pull_request_review":
-        return _handle_pull_request_review_event(payload, repo or _get_or_create_repo_from_payload(payload, db), db)
+        return _handle_pull_request_review_event(payload, repo, db)
     else:
         return {"status": "ignored", "event": event_type, "detail": f"Unhandled event type '{event_type}'."}
 
@@ -219,11 +217,7 @@ def _handle_issues_event(payload: Dict[str, Any], repo: Optional[Repository], db
 
     issue = db.query(Issue).filter(Issue.github_issue_id == gh_issue_id).first()
 
-<<<<<<< HEAD
     if action == "deleted" and issue:
-=======
-    if issue and action == "deleted":
->>>>>>> 7243b73ca8c422da211b2126d3986632dffb6792
         db.delete(issue)
         db.commit()
         return {"status": "success", "event": "issues", "action": action, "detail": f"Issue #{gh_issue_id} deleted."}

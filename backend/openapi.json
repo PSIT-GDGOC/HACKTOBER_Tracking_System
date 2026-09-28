@@ -126,6 +126,74 @@
         }
       }
     },
+    "/admin/sync-org-repos": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Manually trigger PSIT-GDGOC org repository sync",
+        "description": "Force an immediate re-sync of all public repositories from the\nPSIT-GDGOC GitHub organization into the Repository Hub.\n\n- Fetches all public, non-archived, non-forked repos from the org\n- Skips .github and HACKTOBER_Tracking_System\n- Creates new entries for repos not yet in the DB\n- Updates name/platform for repos already in the DB\n\nAdmin only.",
+        "operationId": "manual_sync_org_repos_admin_sync_org_repos_post",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/auth/signup": {
       "post": {
         "tags": [
@@ -889,7 +957,7 @@
           "Issues"
         ],
         "summary": "List registered repositories",
-        "description": "Return all registered official repositories.",
+        "description": "Return all registered official repositories.\n\nRepos are auto-synced from the PSIT-GDGOC GitHub org on startup and\nevery 5 minutes in the background. This endpoint simply reads what's\nalready in the DB \u2014 no GitHub API calls at request time.",
         "operationId": "list_repositories_issues_repositories_get",
         "responses": {
           "200": {
@@ -3461,6 +3529,74 @@
         }
       }
     },
+    "/api/admin/sync-org-repos": {
+      "post": {
+        "tags": [
+          "Admin"
+        ],
+        "summary": "Manually trigger PSIT-GDGOC org repository sync",
+        "description": "Force an immediate re-sync of all public repositories from the\nPSIT-GDGOC GitHub organization into the Repository Hub.\n\n- Fetches all public, non-archived, non-forked repos from the org\n- Skips .github and HACKTOBER_Tracking_System\n- Creates new entries for repos not yet in the DB\n- Updates name/platform for repos already in the DB\n\nAdmin only.",
+        "operationId": "manual_sync_org_repos_api_admin_sync_org_repos_post",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/auth/signup": {
       "post": {
         "tags": [
@@ -4224,7 +4360,7 @@
           "Issues"
         ],
         "summary": "List registered repositories",
-        "description": "Return all registered official repositories.",
+        "description": "Return all registered official repositories.\n\nRepos are auto-synced from the PSIT-GDGOC GitHub org on startup and\nevery 5 minutes in the background. This endpoint simply reads what's\nalready in the DB \u2014 no GitHub API calls at request time.",
         "operationId": "list_repositories_api_issues_repositories_get",
         "responses": {
           "200": {
