@@ -39,8 +39,14 @@ def sync_issues(
     Backfill / sync issues from GitHub REST API for registered official repositories.
     Parses labels to automatically classify difficulty, category, and tech tags.
     """
-    result = sync_issues_from_github(db=db, repo_id=repo_id)
-    return result
+    import logging
+    logger = logging.getLogger(__name__)
+    try:
+        result = sync_issues_from_github(db=db, repo_id=repo_id)
+        return result
+    except Exception as exc:
+        logger.exception("Issue sync failed: %s", exc)
+        raise
 
 
 @router.get("", response_model=IssueListResponse, summary="List issues with filters")

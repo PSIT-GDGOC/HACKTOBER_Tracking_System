@@ -316,6 +316,20 @@ def sync_single_repo_from_webhook(
         repo, was_created = _upsert_repo(db, repo_data, old_name=old_name)
         action_verb = "Created" if was_created else "Updated"
         logger.info("OrgSync webhook: %s repo '%s' (%s) via org webhook", action_verb, name, repo.platform.value)
+
+        # If a brand-new repo was just added, immediately fetch its issues from GitHub
+        # so they appear on the platform without waiting for a manual sync.
+        if was_created:
+            try:
+                from app.services.issue_service import sync_issues_from_github
+                issue_result = sync_issues_from_github(db=db, repo_id=repo.id)
+                logger.info(
+                    "OrgSync webhook: Auto-fetched issues for new repo '%s': %s created, %s updated",
+                    name, issue_result.get("created_count", 0), issue_result.get("updated_count", 0)
+                )
+            except Exception as ie:
+                logger.warning("OrgSync webhook: Issue auto-fetch failed for '%s': %s", name, ie)
+
         return repo
     except Exception as e:
         logger.error("OrgSync webhook: Error upserting repo '%s': %s", name, e)
