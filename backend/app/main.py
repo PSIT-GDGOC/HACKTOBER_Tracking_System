@@ -149,39 +149,6 @@ def test_db():
         return {"db": "error", "error": str(e), "traceback": traceback.format_exc()}
 
 
-@app.get("/debug/sync-issues", tags=["System"])
-def debug_sync_issues():
-    """Temporary debug: run issues sync and return real error if 500."""
-    import traceback
-    try:
-        from app.db import SessionLocal
-        from app.services.issue_service import sync_issues_from_github
-        db = SessionLocal()
-        result = sync_issues_from_github(db=db)
-        db.close()
-        return {"status": "ok", "result": result}
-    except Exception as e:
-        return {"status": "error", "error": str(e), "traceback": traceback.format_exc()}
-
-
-@app.get("/debug/db-schema", tags=["System"])
-def debug_db_schema():
-    """Temporary debug: inspect actual columns in the issues table on live DB."""
-    import traceback
-    try:
-        from app.db import SessionLocal
-        from sqlalchemy import text
-        db = SessionLocal()
-        rows = db.execute(text(
-            "SELECT column_name, data_type, is_nullable FROM information_schema.columns "
-            "WHERE table_name='issues' ORDER BY ordinal_position"
-        )).fetchall()
-        db.close()
-        return {"issues_columns": [dict(r._mapping) for r in rows]}
-    except Exception as e:
-        return {"error": str(e), "traceback": traceback.format_exc()}
-
-
 # Include Routers — dual-mount on root and /api for Vercel reverse proxy and direct backend compatibility
 from app.routers import (
     admin,
