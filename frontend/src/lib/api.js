@@ -206,12 +206,9 @@ export const githubPrUrl = (repoBrief, pr) =>
 export async function discoverRepositories() {
   try {
     const list = await api.repositories();
-    if (Array.isArray(list) && list.length > 0) return list;
+    if (Array.isArray(list)) return list;
   } catch {}
-  return [
-    { id: 1, name: "hacktoberfest-web", platform: "web", github_repo_url: "https://github.com/PSIT-GDGOC/hacktoberfest-web" },
-    { id: 2, name: "hacktoberfest-android", platform: "android", github_repo_url: "https://github.com/gdgoc-psit/hacktoberfest-android" },
-  ];
+  return [];
 }
 
 /** Points awarded per difficulty — same weights the leaderboard query uses. */
