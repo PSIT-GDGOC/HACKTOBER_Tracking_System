@@ -722,14 +722,61 @@ async def exchange_github_oauth_code(code: str) -> Dict[str, Any]:
         }
 
 
+def validate_github_username(github_username: str) -> Tuple[str, Optional[str]]:
+    """
+    Validate that a GitHub username actually exists on GitHub via the REST API.
+    Uses GITHUB_ACCESS_TOKEN if configured to avoid unauthenticated rate-limiting.
+
+    Returns:
+        Tuple of (canonical_username: str, github_id: Optional[str])
+
+    Raises:
+        HTTPException 400 if the GitHub username does not exist (404).
+    """
+    clean_username = github_username.strip().lstrip("@")
+    if not clean_username:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="GitHub username cannot be empty."
+        )
+
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "GDGOC-Hacktoberfest-Platform/1.0",
+    }
+    if settings.GITHUB_ACCESS_TOKEN:
+        headers["Authorization"] = f"Bearer {settings.GITHUB_ACCESS_TOKEN}"
+
+    with httpx.Client(timeout=httpx.Timeout(6.0), headers=headers) as client:
+        try:
+            gh_resp = client.get(f"https://api.github.com/users/{clean_username}")
+            if gh_resp.status_code == 404:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"GitHub account '@{clean_username}' was not found on GitHub. Please check the spelling.",
+                )
+            if gh_resp.status_code == 200:
+                gh_data = gh_resp.json()
+                canonical_username = gh_data.get("login", clean_username)
+                github_id = str(gh_data.get("id", "")) or None
+                return canonical_username, github_id
+        except HTTPException:
+            raise
+        except Exception as exc:
+            logger.warning("GitHub API user lookup warning for '%s': %s", clean_username, exc)
+
+    return clean_username, None
+
+
 def link_github_account(
     db: Session,
     user: User,
     github_username: str,
     github_id: Optional[str] = None
 ) -> User:
-    """Link verified student to their GitHub identity."""
-    clean_username = github_username.strip()
+    """Link verified student to their GitHub identity after validating existence on GitHub."""
+    clean_username, fetched_id = validate_github_username(github_username)
+    final_github_id = github_id or fetched_id
 
     # Guard: prevent two students linking the same GitHub identity
     existing = (
@@ -744,8 +791,8 @@ def link_github_account(
         )
 
     user.github_username = clean_username
-    if github_id:
-        user.github_id = str(github_id)
+    if final_github_id:
+        user.github_id = str(final_github_id)
 
     db.commit()
     db.refresh(user)

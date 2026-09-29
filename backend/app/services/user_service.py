@@ -91,18 +91,26 @@ def update_current_user_profile(
 
     if update_data.github_username is not None:
         new_gh = update_data.github_username.strip()
-        # Verify uniqueness
-        existing = (
-            db.query(User)
-            .filter(User.github_username.ilike(new_gh), User.id != user.id)
-            .first()
-        )
-        if existing:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"GitHub username '{new_gh}' is already associated with another student account."
+        if new_gh:
+            from app.services.auth_service import validate_github_username
+            clean_gh, fetched_id = validate_github_username(new_gh)
+            # Verify uniqueness
+            existing = (
+                db.query(User)
+                .filter(User.github_username.ilike(clean_gh), User.id != user.id)
+                .first()
             )
-        user.github_username = new_gh
+            if existing:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"GitHub username '{clean_gh}' is already associated with another student account."
+                )
+            user.github_username = clean_gh
+            if fetched_id:
+                user.github_id = fetched_id
+        else:
+            user.github_username = None
+            user.github_id = None
 
     user.updated_at = datetime.now(timezone.utc)
     db.commit()

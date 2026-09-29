@@ -100,7 +100,7 @@ def test_update_own_profile(client_and_db):
     assert res.status_code == 200
     data = res.json()
     assert data["name"] == "Vikram R. (Updated)"
-    assert data["github_username"] == "vikram-coder"
+    assert data["github_username"].lower() == "vikram-coder"
 
     # 2. Attempt to take another student's github_username
     res = client.patch(
