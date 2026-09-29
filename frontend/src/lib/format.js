@@ -2,32 +2,18 @@
  * Formatting helpers for the backend's data shapes.
  */
 import { POINTS_BY_DIFFICULTY } from "./api";
+import { parseApiDate, formatAbsolute, formatRelative } from "./time";
+
+export { parseApiDate, formatAbsolute, formatRelative };
 
 /* ------------------------------ time ------------------------------ */
 
 export function timeAgo(iso) {
-  if (!iso) return "—";
-  const diff = Date.now() - new Date(iso).getTime();
-  const abs = Math.abs(diff);
-  const future = diff < 0;
-  if (abs < 60000) return future ? "in <1m" : "just now";
-  if (abs < 3600000) return fmt(abs / 60000, "m", future);
-  if (abs < 86400000) return fmt(abs / 3600000, "h", future);
-  if (abs < 2592000000) return fmt(abs / 86400000, "d", future);
-  return fmt(abs / 2592000000, "mo", future);
+  return formatRelative(iso);
 }
 
-const fmt = (v, u, future) => {
-  const n = Math.round(v);
-  return future ? `in ${n}${u}` : `${n}${u} ago`;
-};
-
 export function fullDate(iso) {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleString("en-IN", {
-    day: "2-digit", month: "short", year: "numeric",
-    hour: "2-digit", minute: "2-digit",
-  });
+  return formatAbsolute(iso);
 }
 
 /* ------------------------------ numbers ------------------------------ */

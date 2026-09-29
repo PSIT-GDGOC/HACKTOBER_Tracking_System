@@ -1,7 +1,7 @@
 from datetime import datetime
 from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Index
 from sqlalchemy.orm import relationship
-from app.db import Base
+from app.db import Base, utc_now
 
 
 class Commit(Base):
@@ -14,7 +14,7 @@ class Commit(Base):
     message = Column(Text, nullable=False)
     issue_id = Column(Integer, ForeignKey("issues.id", ondelete="SET NULL"), nullable=True, index=True)
     pr_id = Column(Integer, ForeignKey("pull_requests.id", ondelete="SET NULL"), nullable=True, index=True)
-    committed_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    committed_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Relationships
     repository = relationship("Repository", back_populates="commits")

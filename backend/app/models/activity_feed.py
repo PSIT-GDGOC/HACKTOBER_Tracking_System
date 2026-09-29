@@ -1,7 +1,7 @@
 from datetime import datetime
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Index
 from sqlalchemy.orm import relationship
-from app.db import Base
+from app.db import Base, utc_now
 
 
 class ActivityFeed(Base):
@@ -12,7 +12,7 @@ class ActivityFeed(Base):
     actor_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     target_type = Column(String(100), nullable=False)       # e.g. "issue", "pull_request", "repository"
     target_id = Column(Integer, nullable=False)             # ID of target entity
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    created_at = Column(DateTime, default=utc_now, nullable=False, index=True)
 
     # Relationships
     actor = relationship("User", back_populates="activities")

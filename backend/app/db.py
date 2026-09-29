@@ -1,7 +1,13 @@
 from typing import Generator
+from datetime import datetime, timezone
 from sqlalchemy import create_engine
 from sqlalchemy.orm import declarative_base, sessionmaker, Session
 from app.config import settings
+
+
+def utc_now() -> datetime:
+    """Return timezone-aware current UTC datetime."""
+    return datetime.now(timezone.utc)
 
 # Engine setup — supports SQLite for local testing and PostgreSQL for production
 if settings.db_url.startswith("sqlite"):

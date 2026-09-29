@@ -3,9 +3,10 @@ from typing import List, Optional
 from pydantic import BaseModel, ConfigDict
 from app.schemas.claim import ClaimUserBrief
 from app.schemas.issue import RepositoryBrief
+from app.schemas.base import AppBaseModel
 
 
-class CommitResponse(BaseModel):
+class CommitResponse(AppBaseModel):
     id: int
     repo_id: int
     github_commit_sha: str

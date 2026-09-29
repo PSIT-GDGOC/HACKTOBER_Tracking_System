@@ -5,9 +5,10 @@ from app.models.pull_request import PRStatus
 from app.models.review import ReviewStatus
 from app.schemas.claim import ClaimUserBrief
 from app.schemas.issue import RepositoryBrief
+from app.schemas.base import AppBaseModel
 
 
-class ReviewDetail(BaseModel):
+class ReviewDetail(AppBaseModel):
     id: int
     pr_id: int
     reviewer_id: int
@@ -29,7 +30,7 @@ class LinkedIssueBrief(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class PRResponse(BaseModel):
+class PRResponse(AppBaseModel):
     id: int
     repo_id: int
     github_pr_id: int

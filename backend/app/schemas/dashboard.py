@@ -4,9 +4,10 @@ from pydantic import BaseModel, ConfigDict
 from app.schemas.claim import ClaimUserBrief
 from app.schemas.issue import RepositoryBrief
 from app.schemas.pull_request import PRResponse
+from app.schemas.base import AppBaseModel
 
 
-class ActiveClaimSummary(BaseModel):
+class ActiveClaimSummary(AppBaseModel):
     claim_id: int
     issue_id: int
     issue_title: str
@@ -32,7 +33,7 @@ class StudentDashboardResponse(BaseModel):
     recent_prs: List[PRResponse] = []
 
 
-class ReviewQueueItem(BaseModel):
+class ReviewQueueItem(AppBaseModel):
     pr_id: int
     github_pr_id: int
     title: str

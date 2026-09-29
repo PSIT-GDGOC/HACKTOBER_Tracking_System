@@ -823,4 +823,154 @@ def test_forgot_password_and_otp_reset(client_and_db):
     assert "access_token" in res_login.json()
 
 
+def test_forgot_password_nonexistent_user_returns_generic_200(client_and_db):
+    """Requesting password reset for unregistered roll or email returns generic 200 to prevent account enumeration."""
+    client, _ = client_and_db
+    res = client.post("/auth/forgot-password", json={"identifier": "9999999999999"})
+    assert res.status_code == 200
+    assert res.json()["success"] is True
+    assert "If an account with that roll number exists" in res.json()["message"]
+
+
+def test_reset_password_expired_otp_returns_400(client_and_db):
+    """Submitting an expired OTP returns 400."""
+    from datetime import datetime, timezone, timedelta
+    from app.services.auth_service import hash_password
+
+    client, db = client_and_db
+    user = User(
+        name="Expired OTP User",
+        email="expired@psit.ac.in",
+        psit_roll_no="2200330100888",
+        role=UserRole.STUDENT,
+        verified=True,
+        reset_otp_hash=hash_password("112233"),
+        reset_otp_expires=datetime.now(timezone.utc) - timedelta(minutes=5),  # expired 5 min ago
+    )
+    db.add(user)
+    db.commit()
+
+    res = client.post("/auth/reset-password", json={
+        "identifier": "2200330100888",
+        "otp": "112233",
+        "new_password": "NewValidPassword123!",
+    })
+    assert res.status_code == 400
+    assert "expired" in res.json()["detail"]
+
+
+def test_reset_password_single_use_replay_fails(client_and_db):
+    """Using an OTP a second time fails with 400."""
+    client, db = client_and_db
+    user = User(
+        name="Replay Tester",
+        email="replay@psit.ac.in",
+        psit_roll_no="2200330100999",
+        role=UserRole.STUDENT,
+        verified=True,
+    )
+    db.add(user)
+    db.commit()
+
+    with patch("secrets.randbelow", return_value=123456):
+        client.post("/auth/forgot-password", json={"identifier": "2200330100999"})
+
+    # First reset succeeds
+    res1 = client.post("/auth/reset-password", json={
+        "identifier": "2200330100999",
+        "otp": "223456",
+        "new_password": "StrongPassword123!",
+    })
+    assert res1.status_code == 200
+
+    # Second reset with the same OTP fails
+    res2 = client.post("/auth/reset-password", json={
+        "identifier": "2200330100999",
+        "otp": "223456",
+        "new_password": "AnotherStrongPassword123!",
+    })
+    assert res2.status_code == 400
+    assert "No password reset request found" in res2.json()["detail"]
+
+
+def test_reset_password_weak_password_rejected(client_and_db):
+    """New password must meet complexity rules during reset."""
+    client, db = client_and_db
+    user = User(
+        name="Complexity Tester",
+        email="complex@psit.ac.in",
+        psit_roll_no="2200330100666",
+        role=UserRole.STUDENT,
+        verified=True,
+    )
+    db.add(user)
+    db.commit()
+
+    with patch("secrets.randbelow", return_value=111111):
+        client.post("/auth/forgot-password", json={"identifier": "2200330100666"})
+
+    # Too short
+    res_short = client.post("/auth/reset-password", json={
+        "identifier": "2200330100666",
+        "otp": "211111",
+        "new_password": "short",
+    })
+    assert res_short.status_code in [400, 422]
+
+
+def test_github_oauth_login_url_generation(client_and_db):
+    """GET /auth/github/login returns authorization URL and client_id."""
+    client, _ = client_and_db
+    res = client.get("/auth/github/login")
+    assert res.status_code == 200
+    data = res.json()
+    assert "oauth_url" in data
+    assert "client_id" in data
+    assert "github.com/login/oauth/authorize" in data["oauth_url"]
+
+
+def test_github_oauth_callback_flow(client_and_db):
+    """POST /auth/github/callback exchanges code and links student identity."""
+    client, db = client_and_db
+
+    student = User(
+        id=88,
+        name="OAuth Student",
+        email="oauth@psit.ac.in",
+        psit_roll_no="2200330100088",
+        role=UserRole.STUDENT,
+        verified=True,
+    )
+    db.add(student)
+    db.commit()
+
+    token = create_access_token({"sub": "88", "roll_no": "2200330100088", "role": "student"})
+
+    fake_gh_profile = {
+        "github_username": "oauth-contributor",
+        "github_id": "778899",
+    }
+
+    with patch("app.routers.auth.exchange_github_oauth_code", new=AsyncMock(return_value=fake_gh_profile)), \
+         patch("app.services.auth_service.validate_github_username", return_value=("oauth-contributor", "778899")):
+        res = client.post(
+            "/auth/github/callback",
+            json={"code": "valid-oauth-code-123"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+
+    assert res.status_code == 200
+    data = res.json()
+    assert data["success"] is True
+    assert data["github_username"] == "oauth-contributor"
+    assert data["github_id"] == "778899"
+
+    # Verify DB updated
+    db.expire_all()
+    updated = db.query(User).filter(User.id == 88).first()
+    assert updated.github_username == "oauth-contributor"
+    assert updated.github_id == "778899"
+
+
+
 

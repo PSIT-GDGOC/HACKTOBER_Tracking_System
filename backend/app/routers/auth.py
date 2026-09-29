@@ -331,19 +331,19 @@ def forgot_password(
                 email=target_user.email,
             )
 
-    # If roll number is not found in database, inform the user clearly
+    # If no account found, return generic message to prevent account enumeration
     if is_numeric_roll:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"No account found with roll number '{raw_input}'. Please check your roll number or register first.",
+        return ForgotPasswordResponse(
+            success=True,
+            message="If an account with that roll number exists, password reset instructions have been sent.",
+            email=None,
         )
-
-    # For email, return generic message to prevent account enumeration
-    return ForgotPasswordResponse(
-        success=True,
-        message="If an account with that email exists, password reset instructions have been sent.",
-        email=raw_input if is_email else None,
-    )
+    else:
+        return ForgotPasswordResponse(
+            success=True,
+            message="If an account with that email exists, password reset instructions have been sent.",
+            email=raw_input if is_email else None,
+        )
 
 
 @router.post("/reset-password", response_model=ResetPasswordResponse, summary="Reset password using token or OTP")

@@ -1,7 +1,8 @@
 """Pydantic schemas for Module 8: Engagement Layer (Leaderboard, Notifications, Activity Feed)"""
 from datetime import datetime
 from typing import List, Optional, Any, Dict
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
+from app.schemas.base import AppBaseModel
 
 
 # ============================================================================
@@ -34,7 +35,7 @@ class LeaderboardResponse(BaseModel):
 # Notification Schemas
 # ============================================================================
 
-class NotificationResponse(BaseModel):
+class NotificationResponse(AppBaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
@@ -43,6 +44,38 @@ class NotificationResponse(BaseModel):
     payload: Dict[str, Any]
     read: bool
     created_at: datetime
+    repo_id: Optional[int] = None
+    issue_id: Optional[int] = None
+    pr_id: Optional[int] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def extract_structured_ids(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            payload = data.get("payload") or {}
+            data = dict(data)
+            if data.get("repo_id") is None:
+                data["repo_id"] = payload.get("repo_id")
+            if data.get("issue_id") is None:
+                data["issue_id"] = payload.get("issue_id")
+            if data.get("pr_id") is None:
+                data["pr_id"] = payload.get("pr_id")
+            return data
+
+        if hasattr(data, "payload") and isinstance(data.payload, dict):
+            payload = data.payload
+            return {
+                "id": getattr(data, "id", None),
+                "user_id": getattr(data, "user_id", None),
+                "type": getattr(data, "type", None),
+                "payload": payload,
+                "read": getattr(data, "read", None),
+                "created_at": getattr(data, "created_at", None),
+                "repo_id": getattr(data, "repo_id", None) or payload.get("repo_id"),
+                "issue_id": getattr(data, "issue_id", None) or payload.get("issue_id"),
+                "pr_id": getattr(data, "pr_id", None) or payload.get("pr_id"),
+            }
+        return data
 
 
 class NotificationListResponse(BaseModel):
@@ -81,7 +114,7 @@ class ActivityTargetBrief(BaseModel):
     url: Optional[str] = None
 
 
-class ActivityItemResponse(BaseModel):
+class ActivityItemResponse(AppBaseModel):
     id: int
     type: str
     description: Optional[str] = None  # Computed by service (no DB column)

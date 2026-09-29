@@ -2,7 +2,7 @@ import enum
 from datetime import datetime
 from sqlalchemy import Column, Integer, BigInteger, String, Text, DateTime, ForeignKey, Enum, JSON, Index
 from sqlalchemy.orm import relationship
-from app.db import Base
+from app.db import Base, utc_now
 
 
 class IssueDifficulty(str, enum.Enum):
@@ -40,8 +40,8 @@ class Issue(Base):
         nullable=False,
         index=True
     )
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now, nullable=False)
 
     # Relationships
     repository = relationship("Repository", back_populates="issues")

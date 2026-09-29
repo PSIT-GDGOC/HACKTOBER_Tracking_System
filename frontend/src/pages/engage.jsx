@@ -6,7 +6,7 @@ import { useState } from "react";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useData } from "@/lib/hooks";
-import { compact, timeAgo } from "@/lib/format";
+import { compact } from "@/lib/format";
 import { PageHeader, UpdatedPill } from "@/components/Layout";
 import {
   Avatar, Badge, Button, EmptyState, ErrorState, LoadingBlock, Panel,

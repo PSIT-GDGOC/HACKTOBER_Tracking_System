@@ -4,6 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.models.contribution import ContributionStatus, ContributionValidation
 from app.schemas.claim import ClaimUserBrief
 from app.schemas.pull_request import LinkedIssueBrief
+from app.schemas.base import AppBaseModel
 
 
 class TimelineEvent(BaseModel):
@@ -21,7 +22,7 @@ class ContributionPRBrief(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class ContributionResponse(BaseModel):
+class ContributionResponse(AppBaseModel):
     id: int
     user_id: int
     issue_id: int

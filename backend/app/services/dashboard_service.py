@@ -10,7 +10,7 @@ from app.models import (
     Claim, ClaimStatus,
     PullRequest, PRStatus,
     Commit,
-    Contribution, ContributionValidation,
+    Contribution, ContributionValidation, ContributionStatus,
     Review, ReviewStatus,
     ActivityFeed
 )
@@ -57,9 +57,13 @@ def get_student_dashboard(db: Session, student: User) -> StudentDashboardRespons
         .count()
     )
     valid_contribs_count = (
-        db.query(Contribution)
-        .filter(Contribution.user_id == student.id, Contribution.validation_status == ContributionValidation.VALID)
-        .count()
+        db.query(func.count(distinct(Contribution.issue_id)))
+        .filter(
+            Contribution.user_id == student.id,
+            Contribution.validation_status == ContributionValidation.VALID,
+            Contribution.status != ContributionStatus.RELEASED,
+        )
+        .scalar() or 0
     )
 
     recent_prs = (

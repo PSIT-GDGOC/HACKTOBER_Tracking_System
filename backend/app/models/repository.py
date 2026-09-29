@@ -2,7 +2,7 @@ import enum
 from datetime import datetime
 from sqlalchemy import Column, Integer, String, DateTime, Enum
 from sqlalchemy.orm import relationship
-from app.db import Base
+from app.db import Base, utc_now
 
 
 class PlatformType(str, enum.Enum):
@@ -20,7 +20,7 @@ class Repository(Base):
         Enum(PlatformType, values_callable=lambda x: [e.value for e in x], name="platformtype"),
         nullable=False
     )
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Relationships
     issues = relationship("Issue", back_populates="repository", cascade="all, delete-orphan")

@@ -1,9 +1,10 @@
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api, discoverRepositories } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useData } from "@/lib/hooks";
 import { compact, PLATFORM_LABEL } from "@/lib/format";
+import { routes } from "@/lib/routes";
 import { PageHeader, UpdatedPill } from "@/components/Layout";
 import {
   EmptyState, ErrorState, LinkButton, LoadingBlock, Pagination, Panel,
@@ -180,16 +181,16 @@ function RepoHub({ repo }) {
                     {!issues.loading && (issues.data?.items || []).length > 0 && (
                       <div className="space-y-2">
                         {issues.data.items.slice(0, 8).map((i) => (
-                          <button
+                          <Link
                             key={i.id}
-                            onClick={() => drawers.openIssue(i.id)}
-                            className="flex w-full items-center justify-between gap-3 border-b-2 border-dashed border-paper-3 py-2 text-left last:border-0 hover:bg-gyellow-light"
+                            to={routes.issue(i.id)}
+                            className="flex w-full items-center justify-between gap-3 border-b-2 border-dashed border-paper-3 py-2 text-left last:border-0 hover:bg-gyellow-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gblue"
                           >
                             <span className="min-w-0 truncate text-sm font-bold">
                               <span className="font-mono text-ink-soft">#{i.github_issue_id}</span> {i.title}
                             </span>
                             <StatusBadge status={i.status} />
-                          </button>
+                          </Link>
                         ))}
                       </div>
                     )}
@@ -247,7 +248,7 @@ function RepoHub({ repo }) {
 
 const PAGE = 20;
 
-export function PullRequests() {
+export function PullRequestsContent() {
   const [params, setParams] = useSearchParams();
   const { user } = useAuth();
   const drawers = useDrawers();
@@ -401,6 +402,14 @@ export function PullRequests() {
       )}
       {drawers.drawerElements}
     </>
+  );
+}
+
+export function PullRequests() {
+  return (
+    <Suspense fallback={<LoadingBlock rows={6} />}>
+      <PullRequestsContent />
+    </Suspense>
   );
 }
 

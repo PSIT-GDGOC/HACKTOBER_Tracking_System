@@ -2,7 +2,7 @@ import enum
 from datetime import datetime
 from sqlalchemy import Column, Integer, DateTime, ForeignKey, Enum, JSON, Index
 from sqlalchemy.orm import relationship
-from app.db import Base
+from app.db import Base, utc_now
 
 
 class ContributionStatus(str, enum.Enum):
@@ -13,6 +13,7 @@ class ContributionStatus(str, enum.Enum):
     CHANGES_REQUESTED = "changes_requested"
     ACCEPTED = "accepted"
     MERGED = "merged"
+    RELEASED = "released"
 
 
 class ContributionValidation(str, enum.Enum):
@@ -43,8 +44,8 @@ class Contribution(Base):
         index=True
     )
     timeline_json = Column(JSON, default=list, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now, nullable=False)
 
     # Relationships
     user = relationship("User", back_populates="contributions")

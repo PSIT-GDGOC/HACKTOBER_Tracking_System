@@ -3,9 +3,10 @@ from typing import List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 from app.models.user import UserRole, VerificationMethod
 from app.schemas.contribution import ContributionResponse
+from app.schemas.base import AppBaseModel
 
 
-class UserPublicProfileResponse(BaseModel):
+class UserPublicProfileResponse(AppBaseModel):
     id: int
     name: str
     github_username: Optional[str] = None
@@ -20,7 +21,7 @@ class UserPublicProfileResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class UserProfileResponse(BaseModel):
+class UserProfileResponse(AppBaseModel):
     id: int
     name: str
     email: str

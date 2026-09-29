@@ -3,6 +3,7 @@ from typing import List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 from app.models.issue import IssueDifficulty, IssueStatus
 from app.schemas.claim import ClaimResponse
+from app.schemas.base import AppBaseModel
 
 
 class IssueBase(BaseModel):
@@ -45,7 +46,7 @@ class RepositoryCreate(BaseModel):
     platform: str = Field("web", max_length=50)
 
 
-class IssueResponse(BaseModel):
+class IssueResponse(AppBaseModel):
     id: int
     repo_id: int
     github_issue_id: int

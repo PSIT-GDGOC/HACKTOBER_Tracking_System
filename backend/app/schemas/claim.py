@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel, ConfigDict
 from app.models.claim import ClaimStatus
+from app.schemas.base import AppBaseModel
 
 
 class ClaimBase(BaseModel):
@@ -23,7 +24,7 @@ class ClaimUserBrief(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class ClaimResponse(BaseModel):
+class ClaimResponse(AppBaseModel):
     id: int
     issue_id: int
     user_id: int
