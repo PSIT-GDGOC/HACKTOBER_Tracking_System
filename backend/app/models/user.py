@@ -51,6 +51,7 @@ class User(Base):
     )
     verified = Column(Boolean, default=False, nullable=False)
     verified_at = Column(DateTime, nullable=True)
+    is_email_verified = Column(Boolean, default=False, nullable=False, server_default=text("false"))
 
     github_username = Column(String(100), unique=True, index=True, nullable=True)
     github_id = Column(String(100), unique=True, nullable=True)
@@ -86,3 +87,4 @@ class User(Base):
     contributions = relationship("Contribution", back_populates="user", cascade="all, delete-orphan")
     notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
     activities = relationship("ActivityFeed", back_populates="actor")
+    email_tokens = relationship("EmailToken", back_populates="user", cascade="all, delete-orphan")

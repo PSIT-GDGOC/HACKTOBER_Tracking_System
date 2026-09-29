@@ -4,7 +4,7 @@ import { AuthProvider, RequireRole } from "@/lib/auth";
 import { AppShell } from "@/components/Layout";
 import { ErrorBoundary } from "@/pages/misc";
 import Landing from "@/pages/Landing";
-import { AuthWizard, Login, GitHubOAuthCallback } from "@/pages/auth";
+import { AuthWizard, Login, GitHubOAuthCallback, VerifyEmail, ResetPassword } from "@/pages/auth";
 import StudentDashboard from "@/pages/student";
 import IssueExplorer from "@/pages/issues";
 import { Repositories, PullRequests, Commits } from "@/pages/repos";
@@ -25,6 +25,9 @@ export default function App() {
             <Route path="/join" element={<AuthWizard />} />
             <Route path="/login" element={<Login />} />
             <Route path="/auth/callback" element={<GitHubOAuthCallback />} />
+            <Route path="/verify-email" element={<VerifyEmail />} />
+            <Route path="/reset-password" element={<ResetPassword />} />
+            <Route path="/forgot-password" element={<ResetPassword />} />
 
             {/* ---------- authenticated app (sidebar shell + role guard) ---------- */}
             <Route

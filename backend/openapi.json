@@ -358,13 +358,122 @@
         }
       }
     },
+    "/auth/send-verification": {
+      "post": {
+        "tags": [
+          "Auth & Verification"
+        ],
+        "summary": "Send email verification link via Resend",
+        "description": "Send an email verification link using Resend.\nCan be invoked by an authenticated student (uses account email),\nor unauthenticated by supplying an email address in the payload.\nEnforces per-email cooldown (1/60s, max 5/hr).",
+        "operationId": "send_verification_auth_send_verification_post",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/SendVerificationRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SendVerificationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/verify-email": {
+      "post": {
+        "tags": [
+          "Auth & Verification"
+        ],
+        "summary": "Verify email address using token",
+        "description": "Accepts single-use verification token, validates expiry and purpose,\nand marks user's email as verified.",
+        "operationId": "verify_email_auth_verify_email_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyEmailRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerifyEmailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/auth/forgot-password": {
       "post": {
         "tags": [
           "Auth & Verification"
         ],
-        "summary": "Request 6-digit password reset OTP via email",
-        "description": "Send a 6-digit password reset OTP code to the registered student's email address.\nCode is valid for 15 minutes.",
+        "summary": "Request password reset via email or roll number",
+        "description": "Send a password reset link and OTP to the registered student's email address.\n\nAccepts either roll number or email:\n- If the input consists entirely of numbers (digits) -> treated as Roll Number.\n  The system looks up the student by roll number, fetches their registered email\n  from the database, generates a 6-digit OTP + reset token, and dispatches the email.\n- If the input contains '@' (e.g. ends with @gmail.com or @psit.ac.in) -> treated as Email.",
         "operationId": "forgot_password_auth_forgot_password_post",
         "requestBody": {
           "content": {
@@ -405,8 +514,8 @@
         "tags": [
           "Auth & Verification"
         ],
-        "summary": "Reset password using email OTP",
-        "description": "Verify the 6-digit OTP code and set a new account password in the database.",
+        "summary": "Reset password using token or OTP",
+        "description": "Reset password using single-use token from email link, or using 6-digit OTP.",
         "operationId": "reset_password_auth_reset_password_post",
         "requestBody": {
           "content": {
@@ -3845,13 +3954,122 @@
         }
       }
     },
+    "/api/auth/send-verification": {
+      "post": {
+        "tags": [
+          "Auth & Verification"
+        ],
+        "summary": "Send email verification link via Resend",
+        "description": "Send an email verification link using Resend.\nCan be invoked by an authenticated student (uses account email),\nor unauthenticated by supplying an email address in the payload.\nEnforces per-email cooldown (1/60s, max 5/hr).",
+        "operationId": "send_verification_api_auth_send_verification_post",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Authorization"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/SendVerificationRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SendVerificationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/auth/verify-email": {
+      "post": {
+        "tags": [
+          "Auth & Verification"
+        ],
+        "summary": "Verify email address using token",
+        "description": "Accepts single-use verification token, validates expiry and purpose,\nand marks user's email as verified.",
+        "operationId": "verify_email_api_auth_verify_email_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyEmailRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerifyEmailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/auth/forgot-password": {
       "post": {
         "tags": [
           "Auth & Verification"
         ],
-        "summary": "Request 6-digit password reset OTP via email",
-        "description": "Send a 6-digit password reset OTP code to the registered student's email address.\nCode is valid for 15 minutes.",
+        "summary": "Request password reset via email or roll number",
+        "description": "Send a password reset link and OTP to the registered student's email address.\n\nAccepts either roll number or email:\n- If the input consists entirely of numbers (digits) -> treated as Roll Number.\n  The system looks up the student by roll number, fetches their registered email\n  from the database, generates a 6-digit OTP + reset token, and dispatches the email.\n- If the input contains '@' (e.g. ends with @gmail.com or @psit.ac.in) -> treated as Email.",
         "operationId": "forgot_password_api_auth_forgot_password_post",
         "requestBody": {
           "content": {
@@ -3892,8 +4110,8 @@
         "tags": [
           "Auth & Verification"
         ],
-        "summary": "Reset password using email OTP",
-        "description": "Verify the 6-digit OTP code and set a new account password in the database.",
+        "summary": "Reset password using token or OTP",
+        "description": "Reset password using single-use token from email link, or using 6-digit OTP.",
         "operationId": "reset_password_api_auth_reset_password_post",
         "requestBody": {
           "content": {
@@ -7792,16 +8010,32 @@
       },
       "ForgotPasswordRequest": {
         "properties": {
+          "email": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email",
+            "description": "Registered email address or PSIT roll number"
+          },
           "identifier": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Identifier",
             "description": "PSIT roll number or email address"
           }
         },
         "type": "object",
-        "required": [
-          "identifier"
-        ],
         "title": "ForgotPasswordRequest"
       },
       "ForgotPasswordResponse": {
@@ -7813,18 +8047,22 @@
           },
           "message": {
             "type": "string",
-            "title": "Message"
+            "title": "Message",
+            "default": "If an account with that email exists, password reset instructions have been sent."
           },
           "email": {
-            "type": "string",
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
             "title": "Email"
           }
         },
         "type": "object",
-        "required": [
-          "message",
-          "email"
-        ],
         "title": "ForgotPasswordResponse"
       },
       "GitHubOAuthCallbackRequest": {
@@ -8806,17 +9044,17 @@
       },
       "ResetPasswordRequest": {
         "properties": {
-          "identifier": {
-            "type": "string",
-            "title": "Identifier",
-            "description": "PSIT roll number or email address"
-          },
-          "otp": {
-            "type": "string",
-            "maxLength": 6,
-            "minLength": 6,
-            "title": "Otp",
-            "description": "6-digit OTP code received via email"
+          "token": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Token",
+            "description": "Password reset token from email link"
           },
           "new_password": {
             "type": "string",
@@ -8824,12 +9062,36 @@
             "minLength": 8,
             "title": "New Password",
             "description": "New strong password"
+          },
+          "identifier": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Identifier",
+            "description": "PSIT roll number or email address (legacy OTP)"
+          },
+          "otp": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 6,
+                "minLength": 6
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Otp",
+            "description": "6-digit OTP code (legacy OTP)"
           }
         },
         "type": "object",
         "required": [
-          "identifier",
-          "otp",
           "new_password"
         ],
         "title": "ResetPasswordRequest"
@@ -9260,6 +9522,41 @@
         ],
         "title": "SearchUserResult"
       },
+      "SendVerificationRequest": {
+        "properties": {
+          "email": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "email"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Email",
+            "description": "Email to send verification link to (if unauthenticated)"
+          }
+        },
+        "type": "object",
+        "title": "SendVerificationRequest"
+      },
+      "SendVerificationResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "default": true
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "Verification email sent. Please check your inbox."
+          }
+        },
+        "type": "object",
+        "title": "SendVerificationResponse"
+      },
       "SetPasswordRequest": {
         "properties": {
           "password": {
@@ -9615,6 +9912,11 @@
             ],
             "title": "Verified At"
           },
+          "is_email_verified": {
+            "type": "boolean",
+            "title": "Is Email Verified",
+            "default": false
+          },
           "verification_method": {
             "anyOf": [
               {
@@ -9834,6 +10136,42 @@
           "manual"
         ],
         "title": "VerificationMethod"
+      },
+      "VerifyEmailRequest": {
+        "properties": {
+          "token": {
+            "type": "string",
+            "minLength": 10,
+            "title": "Token",
+            "description": "Verification token from the link"
+          }
+        },
+        "type": "object",
+        "required": [
+          "token"
+        ],
+        "title": "VerifyEmailRequest"
+      },
+      "VerifyEmailResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "default": true
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "Email verified successfully."
+          },
+          "is_email_verified": {
+            "type": "boolean",
+            "title": "Is Email Verified",
+            "default": true
+          }
+        },
+        "type": "object",
+        "title": "VerifyEmailResponse"
       },
       "VerifyIDCardRequest": {
         "properties": {

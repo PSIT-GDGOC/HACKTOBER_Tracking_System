@@ -10,6 +10,7 @@ from app.models.review import Review, ReviewStatus
 from app.models.notification import Notification
 from app.models.activity_feed import ActivityFeed
 from app.models.webhook_job import WebhookJob, WebhookJobStatus
+from app.models.email_token import EmailToken
 
 __all__ = [
     "Base",
@@ -35,4 +36,5 @@ __all__ = [
     "ActivityFeed",
     "WebhookJob",
     "WebhookJobStatus",
+    "EmailToken",
 ]

@@ -32,6 +32,14 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str = ""
     SMTP_FROM: str = "noreply@gdgoc-psit.ac.in"
 
+    # Resend Email Integration
+    RESEND_API_KEY: str = ""
+    EMAIL_FROM: str = "YourApp <onboarding@resend.dev>"
+    FRONTEND_URL: str = "https://hacktober-tracking-system-ocai.vercel.app"
+    VERIFY_TOKEN_EXPIRE_MINUTES: int = 30
+    RESET_TOKEN_EXPIRE_MINUTES: int = 30
+    REQUIRE_EMAIL_VERIFICATION: bool = False
+
     # PSIT Portal Integration
     PSIT_PORTAL_BASE_URL: str = "https://www.psit.ac.in/op"
     ERP_API_URL: str = ""

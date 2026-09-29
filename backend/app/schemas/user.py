@@ -27,6 +27,7 @@ class UserProfileResponse(BaseModel):
     psit_roll_no: str
     verified: bool
     verified_at: Optional[datetime] = None
+    is_email_verified: bool = False
     verification_method: Optional[VerificationMethod] = None
     github_username: Optional[str] = None
     github_id: Optional[str] = None

@@ -56,6 +56,22 @@ async def lifespan(app: FastAPI):
                 conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_webhook_jobs_delivery_id ON webhook_jobs (delivery_id);"))
                 conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_otp_hash VARCHAR(255);"))
                 conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_otp_expires TIMESTAMP;"))
+                conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_email_verified BOOLEAN NOT NULL DEFAULT FALSE;"))
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS email_tokens (
+                        id SERIAL PRIMARY KEY,
+                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                        token_hash VARCHAR(64) NOT NULL,
+                        purpose VARCHAR(50) NOT NULL,
+                        expires_at TIMESTAMP WITHOUT TIME ZONE NOT NULL,
+                        used_at TIMESTAMP WITHOUT TIME ZONE,
+                        created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
+                    );
+                """))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_email_tokens_id ON email_tokens (id);"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_email_tokens_user_id ON email_tokens (user_id);"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_email_tokens_token_hash ON email_tokens (token_hash);"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_email_tokens_purpose ON email_tokens (purpose);"))
                 conn.commit()
                 logger.info("Startup DB check: Schema auto-migrations applied successfully.")
     except Exception as e:
