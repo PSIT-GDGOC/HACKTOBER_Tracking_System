@@ -19,6 +19,8 @@ import { cn } from "@/utils/cn";
 import {
   Badge, Button, Callout, Field, GdgMark, Input, Panel, Sticker,
 } from "@/components/ui";
+import { GmailPin } from "@/components/GmailPin";
+import { validateGmail, normalizeEmail, GMAIL_EXAMPLE } from "@/lib/validation/gmail";
 
 const STEPS = ["Intro", "Sign up", "ID check", "Result", "GitHub"];
 
@@ -113,6 +115,8 @@ export function AuthWizard() {
 
   /* signup form */
   const [form, setForm] = useState({ name: "", email: "", psit_roll_no: "", agree: false });
+  const [emailTouched, setEmailTouched] = useState(false);
+  const [emailValidation, setEmailValidation] = useState(null);
   const signup = useMutation(api.signup);
   const [signedUpUser, setSignedUpUser] = useState(null);
 
@@ -172,14 +176,21 @@ export function AuthWizard() {
     e.preventDefault();
     const roll = form.psit_roll_no.trim();
     if (form.name.trim().length < 2) return setError("Enter your full name as it appears on your PSIT ID card.");
-    if (!/^\S+@\S+\.\S+$/.test(form.email)) return setError("Enter a valid email address.");
+    
+    const emailRes = validateGmail(form.email);
+    if (!emailRes.ok) {
+      setEmailTouched(true);
+      setEmailValidation(emailRes);
+      return setError(emailRes.message);
+    }
+
     if (roll.length !== 13) return setError("PSIT roll number must be exactly 13 characters (e.g. 2200320100001).");
     if (!form.agree) return setError("You need to accept the code of conduct to continue.");
     setError(null);
     try {
       const res = await api.signup({
         name: form.name.trim(),
-        email: form.email.trim(),
+        email: emailRes.value,
         psit_roll_no: roll,
       });
       setSignedUpUser(res);
@@ -359,7 +370,7 @@ export function AuthWizard() {
             Use your name and roll number exactly as they appear on your PSIT ID card — the verification
             match depends on it.
           </p>
-          <form onSubmit={doSignup} className="mt-6 space-y-4">
+          <form noValidate onSubmit={doSignup} className="mt-6 space-y-4">
             <Field label="Full name" hint="as on your ID card">
               <Input
                 value={form.name}
@@ -368,14 +379,46 @@ export function AuthWizard() {
                 autoFocus
               />
             </Field>
-            <Field label="Email">
-              <Input
-                type="email"
-                value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
-                placeholder="you@psit.ac.in"
+
+            <div>
+              <GmailPin
+                id="signup-gmail-pin"
+                validation={emailValidation}
+                onApplySuggestion={(s) => {
+                  setForm((prev) => ({ ...prev, email: s }));
+                  setEmailValidation(validateGmail(s));
+                }}
               />
-            </Field>
+              <Field
+                label="Email"
+                error={emailValidation && !emailValidation.ok && emailValidation.code !== "TYPO" ? emailValidation.message : undefined}
+              >
+                <Input
+                  type="email"
+                  autoComplete="email"
+                  inputMode="email"
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck={false}
+                  aria-describedby="signup-gmail-pin"
+                  value={form.email}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setForm({ ...form, email: val });
+                    if (emailTouched) {
+                      setEmailValidation(val ? validateGmail(val) : null);
+                    }
+                  }}
+                  onBlur={() => {
+                    setEmailTouched(true);
+                    if (form.email) {
+                      setEmailValidation(validateGmail(form.email));
+                    }
+                  }}
+                  placeholder={GMAIL_EXAMPLE}
+                />
+              </Field>
+            </div>
             <Field label="PSIT roll number" hint="official roll number">
               <Input
                 value={form.psit_roll_no}
@@ -752,11 +795,21 @@ export function Login() {
     const id = identifier.trim();
     if (!id) return setError("Enter your roll number or email.");
     if (!password.trim()) return setError("Enter your account password.");
+
+    let finalIdentifier = id;
+    if (id.includes("@")) {
+      const emailRes = validateGmail(id);
+      if (!emailRes.ok) {
+        return setError(emailRes.message);
+      }
+      finalIdentifier = emailRes.value;
+    }
+
     setError(null);
     setSuccessMsg(null);
     setPending(true);
     try {
-      const user = await login(id, password.trim());
+      const user = await login(finalIdentifier, password.trim());
       if (user && user.role === "student") {
         if (!user.verified) {
           nav("/join", { state: { step: 2 } });
@@ -853,12 +906,22 @@ export function Login() {
               )}
 
               <form onSubmit={submit} className="mt-6 space-y-4">
-                <Field label="Roll number or email">
+                <GmailPin
+                  id="login-gmail-pin"
+                  variant="login"
+                  validation={identifier.includes("@") ? validateGmail(identifier) : null}
+                  onApplySuggestion={(s) => setIdentifier(s)}
+                />
+                <Field
+                  label="Roll number or email"
+                  error={identifier.includes("@") && !validateGmail(identifier).ok && validateGmail(identifier).code !== "TYPO" ? validateGmail(identifier).message : undefined}
+                >
                   <Input
                     value={identifier}
                     onChange={(e) => setIdentifier(e.target.value)}
                     placeholder="2200320100001"
                     className="font-mono"
+                    aria-describedby="login-gmail-pin"
                     autoFocus
                   />
                 </Field>
