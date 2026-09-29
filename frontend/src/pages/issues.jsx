@@ -2,7 +2,7 @@
  * Issue Explorer — clean, direct list of open issues.
  * FilterBar and stat cards removed for a simple, accurate repository workflow.
  */
-import { useEffect, useState } from "react";
+import { Suspense, useEffect, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { api } from "@/lib/api";
 import { useData } from "@/lib/hooks";
@@ -15,7 +15,7 @@ import { useDrawers } from "@/components/drawers";
 
 const PAGE_SIZE = 12;
 
-export default function IssueExplorer() {
+export function IssueExplorerContent() {
   const [params, setParams] = useSearchParams();
   const drawers = useDrawers();
   const [repoId, setRepoId] = useState(params.get("repo_id") ?? "");
@@ -182,5 +182,13 @@ export default function IssueExplorer() {
 
       {drawers.drawerElements}
     </>
+  );
+}
+
+export default function IssueExplorer() {
+  return (
+    <Suspense fallback={<LoadingBlock rows={6} />}>
+      <IssueExplorerContent />
+    </Suspense>
   );
 }

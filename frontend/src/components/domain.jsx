@@ -161,14 +161,14 @@ export function IssueCard({ issue, onClaim, onRelease, pending, compact }) {
         </div>
       </div>
 
-      <button
-        onClick={() => window.dispatchEvent(new CustomEvent("open-issue-drawer", { detail: issue.id }))}
-        className="group text-left"
+      <Link
+        to={routes.issue(issue.id)}
+        className="group block text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gblue"
       >
         <h3 className="break-words font-display text-base font-extrabold leading-snug tracking-tight group-hover:underline group-hover:decoration-gblue group-hover:decoration-2 group-hover:underline-offset-2">
           <span className="font-mono text-ink-soft">#{issue.github_issue_id}</span> {issue.title}
         </h3>
-      </button>
+      </Link>
 
       {!compact && (
         <div className="mt-3 flex flex-wrap items-center gap-1.5">
@@ -251,12 +251,12 @@ export function PRCard({ pr, showContributor = true }) {
               </span>
             )}
             {pr.linked_issue && (
-              <button
-                type="button"
-                onClick={() => window.dispatchEvent(new CustomEvent("open-issue-drawer", { detail: pr.linked_issue.id }))}
+              <Link
+                to={routes.issue(pr.linked_issue.id)}
+                className="inline-block transition-transform hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gblue"
               >
                 <Badge tone="blue">Linked Issue #{pr.linked_issue.github_issue_id}</Badge>
-              </button>
+              </Link>
             )}
             {prGithubUrl && (
               <a
@@ -537,15 +537,29 @@ export function ActivityRow({ item }) {
 }
 
 /** Backend notification payload: { title?, message?, pr_id?, issue_id? ... } */
-export function NotificationRow({ n, onRead }) {
+export function NotificationRow({ n, onRead, onClick }) {
   const p = n.payload || {};
   const tone =
     String(n.type).includes("merged") ? "bg-ggreen-light"
     : String(n.type).includes("review") ? "bg-gyellow-light"
     : "bg-white";
   return (
-    <div className={cn("flex items-start gap-3 border-b-2 border-dashed border-paper-3 p-4 last:border-0", !n.read && tone)}>
-      {!n.read && <span className="mt-2 h-2.5 w-2.5 shrink-0 rounded-full bg-gblue" />}
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => onClick && onClick(n)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick && onClick(n);
+        }
+      }}
+      className={cn(
+        "flex cursor-pointer items-start gap-3 border-b-2 border-dashed border-paper-3 p-4 transition-colors last:border-0 hover:bg-gyellow-light/70 focus-visible:ring-2 focus-visible:ring-gblue focus-visible:outline-none",
+        !n.read && tone,
+      )}
+    >
+      {!n.read && <span className="mt-2 h-2.5 w-2.5 shrink-0 rounded-full bg-gblue" aria-label="Unread" />}
       <div className="min-w-0 flex-1">
         <p className="font-display text-sm font-extrabold">{p.title || statusLabel(n.type)}</p>
         <p className="mt-0.5 text-sm text-ink-soft">{p.message || p.detail || ""}</p>
@@ -553,10 +567,15 @@ export function NotificationRow({ n, onRead }) {
           {String(n.type).replace(/_/g, " ")} · <RelativeTime date={n.created_at} />
         </p>
       </div>
-      {!n.read && (
+      {!n.read && onRead && (
         <button
-          onClick={() => onRead(n.id)}
-          className="shrink-0 border-2 border-ink bg-ink px-2 py-1 font-mono text-[10px] font-bold uppercase text-paper hover:bg-ggreen"
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onRead(n.id);
+          }}
+          className="shrink-0 border-2 border-ink bg-ink px-2 py-1 font-mono text-[10px] font-bold uppercase text-paper hover:bg-ggreen focus-visible:ring-2 focus-visible:ring-gblue"
+          aria-label="Mark as read"
         >
           Read
         </button>

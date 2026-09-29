@@ -3,10 +3,19 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router-do
 import { cn } from "@/utils/cn";
 import { api, DEMO_MODE, tokenStore, discoverRepositories } from "@/lib/api";
 
+import { useAuth } from "@/lib/auth";
+import { useData, useDebounced } from "@/lib/hooks";
+import { routes, isValidIssueId } from "@/lib/routes";
+import { toast } from "./Toast";
+import { RelativeTime } from "./RelativeTime";
+import { Avatar, Badge, Button, Field, GdgMark, Input, Modal, Panel, StatusBadge, Sticker, Toggle } from "./ui";
+import { NotificationRow } from "./domain";
+
 function RepoSwitcher() {
   const nav = useNavigate();
   const location = useLocation();
   const [repos, setRepos] = useState([]);
+  const [syncedRepoId, setSyncedRepoId] = useState(null);
 
   useEffect(() => {
     discoverRepositories()
@@ -16,27 +25,37 @@ function RepoSwitcher() {
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    const onSync = (e) => {
+      if (e.detail) setSyncedRepoId(String(e.detail));
+    };
+    window.addEventListener("sync-repo-select", onSync);
+    return () => window.removeEventListener("sync-repo-select", onSync);
+  }, []);
+
   const match = location.pathname.match(/\/dashboard\/repos\/(\d+)/);
   const searchParams = new URLSearchParams(location.search);
-  const activeRepoId = match ? match[1] : (searchParams.get("repo_id") || "all");
+  const activeRepoId = syncedRepoId || (match ? match[1] : (searchParams.get("repo_id") || "all"));
 
   return (
-    <div className="hidden items-center gap-1.5 sm:flex">
-      <span className="font-mono text-[10px] font-bold uppercase text-ink-soft">Repo:</span>
+    <div className="flex items-center gap-1.5 min-w-0 max-w-[140px] sm:max-w-xs">
+      <span className="hidden font-mono text-[10px] font-bold uppercase text-ink-soft sm:inline">Repo:</span>
       <select
         value={activeRepoId}
         onChange={(e) => {
           const val = e.target.value;
+          setSyncedRepoId(null);
           if (val === "all") {
             nav("/dashboard/issues");
           } else {
             nav(`/dashboard/repos/${val}`);
           }
         }}
-        className="cursor-pointer border-[2px] border-ink bg-gyellow px-2.5 py-1 font-display text-xs font-bold uppercase shadow-[2px_2px_0_0_#101010] hover:-translate-y-0.5"
+        className="w-full truncate cursor-pointer border-[2px] border-ink bg-gyellow px-2 py-1 font-display text-xs font-bold uppercase shadow-[2px_2px_0_0_#101010] hover:-translate-y-0.5 focus-visible:ring-2 focus-visible:ring-gblue"
         title="Switch repository view"
+        aria-label="Select repository"
       >
-        <option value="all">📦 All Repositories ({repos.length})</option>
+        <option value="all">📦 All Repos ({repos.length})</option>
         {repos.map((r) => (
           <option key={r.id} value={r.id}>
             📂 {r.name}
@@ -46,12 +65,6 @@ function RepoSwitcher() {
     </div>
   );
 }
-import { useAuth } from "@/lib/auth";
-import { useData, useDebounced } from "@/lib/hooks";
-import { timeAgo } from "@/lib/format";
-import { RelativeTime } from "./RelativeTime";
-import { Avatar, Badge, Button, Field, GdgMark, Input, Modal, Panel, StatusBadge, Sticker, Toggle } from "./ui";
-import { NotificationRow } from "./domain";
 
 const NAV = [
   {
@@ -171,6 +184,7 @@ function CommandPalette({ open, onClose }) {
 /* ------------------------------------------------------------------ */
 
 function NotificationBell() {
+  const nav = useNavigate();
   const [open, setOpen] = useState(false);
   const state = useData(() => api.notifications({ limit: 10 }), [], { pollMs: 45000 });
   const unread = state.data?.unread_count ?? 0;
@@ -180,16 +194,46 @@ function NotificationBell() {
     const onDoc = (e) => {
       if (box.current && !box.current.contains(e.target)) setOpen(false);
     };
+    const onKey = (e) => {
+      if (e.key === "Escape") setOpen(false);
+    };
     document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDoc);
+      window.removeEventListener("keydown", onKey);
+    };
   }, []);
+
+  const handleNotificationClick = async (n) => {
+    if (!n.read) {
+      try {
+        await api.markNotificationRead(n.id);
+        state.refetch();
+      } catch {
+        state.refetch();
+        toast("Failed to mark notification as read", { tone: "red" });
+      }
+    }
+    setOpen(false);
+
+    const p = n.payload || {};
+    const issueId = p.issue_id ?? p.issueId ?? n.issue_id;
+    if (isValidIssueId(issueId)) {
+      nav(routes.issue(issueId));
+    }
+  };
+
+  const handleNotificationRead = (id) => {
+    api.markNotificationRead(id).then(() => state.refetch());
+  };
 
   return (
     <div className="relative" ref={box}>
       <button
         onClick={() => setOpen((o) => !o)}
         aria-label={`Notifications${unread ? `, ${unread} unread` : ""}`}
-        className="relative flex h-10 w-10 items-center justify-center border-[3px] border-ink bg-white text-lg shadow-[3px_3px_0_0_#101010] hover:bg-gyellow-light"
+        className="relative flex h-11 w-11 items-center justify-center border-[3px] border-ink bg-white text-lg shadow-[3px_3px_0_0_#101010] hover:bg-gyellow-light focus-visible:ring-2 focus-visible:ring-gblue"
       >
         🔔
         {unread > 0 && (
@@ -199,21 +243,26 @@ function NotificationBell() {
         )}
       </button>
       {open && (
-        <Panel className="absolute right-0 top-12 z-50 w-[min(94vw,380px)] p-0 shadow-[8px_8px_0_0_#101010]">
+        <Panel className="absolute right-0 top-13 z-50 w-[min(92vw,26rem)] p-0 shadow-[8px_8px_0_0_#101010]">
           <div className="flex items-center justify-between border-b-[3px] border-ink bg-gyellow px-3 py-2">
             <p className="font-display text-sm font-extrabold uppercase">Notifications</p>
             <button
               onClick={() => api.markAllNotificationsRead().then(() => state.refetch())}
-              className="border-2 border-ink bg-white px-2 py-0.5 font-mono text-[10px] font-bold uppercase hover:bg-ggreen-light"
+              className="border-2 border-ink bg-white px-2 py-0.5 font-mono text-[10px] font-bold uppercase hover:bg-ggreen-light focus-visible:ring-2 focus-visible:ring-gblue"
             >
               Mark all read
             </button>
           </div>
-          <div className="max-h-80 overflow-y-auto">
+          <div className="max-h-96 overflow-y-auto">
             {state.loading && <p className="p-4 font-mono text-xs uppercase">Loading…</p>}
             {state.error && <p className="p-4 font-mono text-xs text-gred">{state.error}</p>}
             {state.data?.items?.slice(0, 8).map((n) => (
-              <NotificationRow key={n.id} n={n} onRead={(id) => api.markNotificationRead(id).then(() => state.refetch())} />
+              <NotificationRow
+                key={n.id}
+                n={n}
+                onRead={handleNotificationRead}
+                onClick={handleNotificationClick}
+              />
             ))}
             {state.data && state.data.items.length === 0 && (
               <p className="p-4 font-mono text-xs text-ink-soft">No notifications yet — claims, reviews and merges will land here.</p>
@@ -342,11 +391,11 @@ export function AppShell() {
 
       {/* top bar */}
       <header className="sticky top-0 z-40 border-b-[3px] border-ink bg-white">
-        <div className="mx-auto flex max-w-[1500px] items-center gap-3 px-3 py-2.5 sm:px-5">
+        <div className="mx-auto flex max-w-[1500px] items-center gap-2 px-3 py-2 sm:gap-3 sm:px-5">
           <button
             onClick={() => setNavOpen((o) => !o)}
             aria-label="Toggle navigation"
-            className="flex h-10 w-10 shrink-0 items-center justify-center border-[3px] border-ink bg-gyellow text-lg shadow-[3px_3px_0_0_#101010] lg:hidden"
+            className="flex h-11 w-11 shrink-0 items-center justify-center border-[3px] border-ink bg-gyellow text-lg shadow-[3px_3px_0_0_#101010] focus-visible:ring-2 focus-visible:ring-gblue lg:hidden"
           >
             {navOpen ? "✕" : "≡"}
           </button>
@@ -361,19 +410,27 @@ export function AppShell() {
           </Link>
           <button
             onClick={() => setPaletteOpen(true)}
-            className="ml-4 hidden items-center gap-2 border-[3px] border-ink bg-white px-3 py-2 font-mono text-[11px] font-bold uppercase text-ink-soft shadow-[3px_3px_0_0_#101010] hover:bg-gyellow-light md:flex"
+            className="ml-2 hidden items-center gap-2 border-[3px] border-ink bg-white px-3 py-2 font-mono text-[11px] font-bold uppercase text-ink-soft shadow-[3px_3px_0_0_#101010] hover:bg-gyellow-light md:flex focus-visible:ring-2 focus-visible:ring-gblue"
           >
             ⌕ Search everything <kbd className="border-2 border-ink bg-paper-2 px-1.5 py-0.5 text-[10px]">⌘K</kbd>
           </button>
+          <button
+            onClick={() => setPaletteOpen(true)}
+            aria-label="Search everything"
+            className="flex h-11 w-11 shrink-0 items-center justify-center border-[3px] border-ink bg-white font-mono text-base shadow-[2px_2px_0_0_#101010] hover:bg-gyellow-light md:hidden focus-visible:ring-2 focus-visible:ring-gblue"
+          >
+            ⌕
+          </button>
           <RepoSwitcher />
           <div className="ml-auto flex items-center gap-2">
-            <Badge tone={DEMO_MODE ? "yellow" : "green"} dot className="hidden sm:inline-flex">
+            <Badge tone={DEMO_MODE ? "yellow" : "green"} dot className="hidden md:inline-flex">
               {DEMO_MODE ? "api not set" : "live api"}
             </Badge>
             <NotificationBell />
             <button
               onClick={() => setSettingsOpen(true)}
-              className="hidden items-center gap-2 border-[3px] border-ink bg-white px-2 py-1.5 shadow-[3px_3px_0_0_#101010] hover:bg-gyellow-light sm:flex"
+              aria-label="Account settings"
+              className="hidden items-center gap-2 border-[3px] border-ink bg-white px-2.5 py-1.5 shadow-[3px_3px_0_0_#101010] hover:bg-gyellow-light sm:flex focus-visible:ring-2 focus-visible:ring-gblue"
             >
               <Avatar name={user?.name} size={24} />
               <span className="leading-tight">
@@ -381,16 +438,8 @@ export function AppShell() {
                 <span className="block font-mono text-[9px] uppercase text-ink-soft">{user?.role}</span>
               </span>
             </button>
-            <Button size="sm" variant="red" className="sm:hidden" onClick={() => setSettingsOpen(true)}>⚙</Button>
+            <Button size="sm" variant="red" className="flex h-11 w-11 items-center justify-center p-0 sm:hidden" onClick={() => setSettingsOpen(true)} aria-label="Settings">⚙</Button>
           </div>
-        </div>
-        <div className="border-t-2 border-dashed border-paper-3 px-3 py-2 md:hidden">
-          <button
-            onClick={() => setPaletteOpen(true)}
-            className="w-full border-[3px] border-ink bg-white px-3 py-2 text-left font-mono text-[11px] font-bold uppercase text-ink-soft"
-          >
-            ⌕ Search everything…
-          </button>
         </div>
       </header>
 

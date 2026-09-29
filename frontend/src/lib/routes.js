@@ -1,7 +1,5 @@
-/**
- * Internal route helpers and query parameter validators.
- * Navigation targets must ONLY be constructed through these typed helpers.
- */
+import { useCallback, useEffect } from "react";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
 export const ALLOWED_CONTRIBUTION_STATUSES = [
   "all",
@@ -73,16 +71,63 @@ export const routes = {
     return qs ? `/dashboard/commits?${qs}` : "/dashboard/commits";
   },
   profile: (userId, status) => {
-    if (userId) return `/dashboard/profile/${userId}`;
+    const base = userId ? `/dashboard/profile/${userId}` : "/dashboard/profile";
     const sp = new URLSearchParams();
     if (status && status !== "all" && isValidStatus(status)) {
       sp.set("status", status);
     }
     const qs = sp.toString();
-    return qs ? `/dashboard/profile?${qs}` : "/dashboard/profile";
+    return qs ? `${base}?${qs}` : base;
   },
   leaderboard: () => "/dashboard/leaderboard",
   landing: () => "/",
   login: () => "/login",
   join: () => "/join",
 };
+
+/**
+ * Hook to manage URL-driven issue drawer state (?issue=<id>).
+ * Pushes on open (back button closes drawer), replaces on close,
+ * ignores and strips invalid params with { scroll: false }.
+ */
+export function useIssueParam() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  const rawIssue = searchParams.get("issue");
+  const issueId = isValidIssueId(rawIssue) ? rawIssue : null;
+
+  // Clean invalid param from URL if present
+  useEffect(() => {
+    if (rawIssue !== null && !isValidIssueId(rawIssue)) {
+      searchParams.delete("issue");
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, [rawIssue, searchParams, setSearchParams]);
+
+  const openIssue = useCallback(
+    (id) => {
+      if (!id || !isValidIssueId(id)) return;
+      const nextParams = new URLSearchParams(location.search);
+      nextParams.set("issue", String(id));
+      navigate(
+        { pathname: location.pathname, search: `?${nextParams.toString()}` },
+        { replace: false },
+      );
+    },
+    [location.pathname, location.search, navigate],
+  );
+
+  const closeIssue = useCallback(() => {
+    const nextParams = new URLSearchParams(location.search);
+    nextParams.delete("issue");
+    const qs = nextParams.toString();
+    navigate(
+      { pathname: location.pathname, search: qs ? `?${qs}` : "" },
+      { replace: true },
+    );
+  }, [location.pathname, location.search, navigate]);
+
+  return { issueId, openIssue, closeIssue };
+}

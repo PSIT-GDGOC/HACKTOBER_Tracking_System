@@ -2,13 +2,14 @@
  * Student Dashboard — tabs: Overview / My Issues / My Contributions.
  * Data: GET /dashboard/student, GET /contributions/my, issues filtered by active claim.
  */
-import { useMemo, useState } from "react";
+import { Suspense, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, pointsFor, qs } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useData } from "@/lib/hooks";
 import { compact, fullDate, statusLabel } from "@/lib/format";
 import { RelativeTime } from "@/components/RelativeTime";
+import { routes } from "@/lib/routes";
 import { PageHeader, UpdatedPill } from "@/components/Layout";
 import {
   Avatar, Badge, Button, Callout, EmptyState, ErrorState, LinkButton,
@@ -18,7 +19,7 @@ import { BarChart, ContributionCard, IssueCard, PRCard } from "@/components/doma
 import { useDrawers } from "@/components/drawers";
 import { dedupeByIssue, computeContributionCounts } from "@/lib/contributions";
 
-export default function StudentDashboard() {
+export function StudentDashboardContent() {
   const { user } = useAuth();
   const [tab, setTab] = useState("overview");
   const drawers = useDrawers();
@@ -85,6 +86,14 @@ export default function StudentDashboard() {
   );
 }
 
+export default function StudentDashboard() {
+  return (
+    <Suspense fallback={<LoadingBlock rows={6} />}>
+      <StudentDashboardContent />
+    </Suspense>
+  );
+}
+
 /* ------------------------------------------------------------------ */
 /*  Overview tab                                                       */
 /* ------------------------------------------------------------------ */
@@ -95,9 +104,9 @@ function OverviewTab({ d, inReview }) {
     <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
       <div className="min-w-0 space-y-6">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard label="Active claims" value={d.active_claims_count} sub="locked to you" tone="blue" />
-          <StatCard label="PRs submitted" value={d.prs_submitted_count} sub={`${d.prs_merged_count} merged`} tone="green" />
-          <StatCard label="Valid contributions" value={d.valid_contributions_count} sub="counted on the leaderboard" tone="yellow" />
+          <StatCard label="Active claims" value={d.active_claims_count} sub="locked to you" tone="blue" to={routes.issues({ status: "claimed" })} />
+          <StatCard label="PRs submitted" value={d.prs_submitted_count} sub={`${d.prs_merged_count} merged`} tone="green" to={routes.pullRequests()} />
+          <StatCard label="Valid contributions" value={d.valid_contributions_count} sub="counted on the leaderboard" tone="yellow" to={routes.profile(undefined, "merged")} />
           <StatCard label="GitHub" value={d.github_username ? `@${d.github_username}` : "not linked"} sub={d.verified ? "verified" : "verification pending"} tone={d.verified ? "purple" : "red"} />
         </div>
 
@@ -118,9 +127,12 @@ function OverviewTab({ d, inReview }) {
               {d.active_claims.map((c) => (
                 <div key={c.claim_id} className="flex flex-wrap items-center justify-between gap-3 border-2 border-ink bg-paper-2/40 p-3">
                   <div className="min-w-0">
-                    <p className="truncate font-display text-sm font-extrabold">
+                    <Link
+                      to={routes.issue(c.issue_id)}
+                      className="block truncate font-display text-sm font-extrabold hover:underline decoration-gblue"
+                    >
                       <span className="font-mono text-ink-soft">#{c.issue_id}</span> {c.issue_title}
-                    </p>
+                    </Link>
                     <p className="font-mono text-[10px] uppercase tracking-wider text-ink-soft">
                       {c.repo_name} · {c.difficulty} · +{pointsFor(c.difficulty)} pts · claimed <RelativeTime date={c.claimed_at} />
                     </p>
@@ -251,10 +263,10 @@ function ContributionsTab({ q }) {
   return (
     <>
       <div className="mb-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Total contributions" value={total} tone="blue" />
-        <StatCard label="Merged" value={merged} tone="green" />
-        <StatCard label="In progress" value={inProgress} sub="work or review pending" tone="red" />
-        <StatCard label="Valid" value={valid} sub={`of ${total} total`} tone="yellow" />
+        <StatCard label="Total contributions" value={total} tone="blue" to={routes.profile(undefined, "all")} />
+        <StatCard label="Merged" value={merged} tone="green" to={routes.profile(undefined, "merged")} />
+        <StatCard label="In progress" value={inProgress} sub="work or review pending" tone="red" to={routes.profile(undefined, "in_progress")} />
+        <StatCard label="Valid" value={valid} sub={`of ${total} total`} tone="yellow" to={routes.profile(undefined, "all")} />
       </div>
 
       <div className="min-w-0 mb-5">

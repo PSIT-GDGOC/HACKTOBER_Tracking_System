@@ -4,49 +4,60 @@
  * "open-issue-drawer" / "open-pr-drawer" window events; pages drop in
  * `useDrawers()` and render `drawerElements`.
  */
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { api, githubIssueUrl, githubPrUrl, pointsFor } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useData, useMutation } from "@/lib/hooks";
 import { fullDate, statusLabel } from "@/lib/format";
+import { useIssueParam } from "@/lib/routes";
 import { RelativeTime } from "./RelativeTime";
 import { toast } from "./Toast";
 import { cn } from "@/utils/cn";
 import { Badge, Button, Drawer, EmptyState, LoadingBlock, Panel, StatusBadge } from "./ui";
 
 export function useDrawers() {
-  const [issueId, setIssueId] = useState(null);
+  const { issueId, openIssue, closeIssue } = useIssueParam();
   const [prId, setPrId] = useState(null);
 
   useEffect(() => {
     const onIssue = (e) => openIssue(e.detail);
-    const onPr = (e) => openPr(e.detail);
+    const onPr = (e) => {
+      closeIssue();
+      setPrId(e.detail || null);
+    };
     window.addEventListener("open-issue-drawer", onIssue);
     window.addEventListener("open-pr-drawer", onPr);
     return () => {
       window.removeEventListener("open-issue-drawer", onIssue);
       window.removeEventListener("open-pr-drawer", onPr);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [openIssue, closeIssue]);
 
-  const openIssue = useCallback((id) => {
-    setPrId(null);
-    setIssueId(id || null);
-  }, []);
-  const openPr = useCallback((id) => {
-    setIssueId(null);
-    setPrId(id || null);
-  }, []);
-
-  const drawerElements = (
-    <>
-      {issueId && <IssueDrawer issueId={issueId} onClose={() => setIssueId(null)} onOpenPr={openPr} />}
-      {prId && <PRDrawer prId={prId} onClose={() => setPrId(null)} onOpenIssue={openIssue} />}
-    </>
+  const openPr = useCallback(
+    (id) => {
+      closeIssue();
+      setPrId(id || null);
+    },
+    [closeIssue],
   );
 
-  return { openIssue, openPr, drawerElements };
+  const drawerElements = (
+    <Suspense fallback={null}>
+      {issueId && <IssueDrawer issueId={issueId} onClose={closeIssue} onOpenPr={openPr} />}
+      {prId && (
+        <PRDrawer
+          prId={prId}
+          onClose={() => setPrId(null)}
+          onOpenIssue={(id) => {
+            setPrId(null);
+            openIssue(id);
+          }}
+        />
+      )}
+    </Suspense>
+  );
+
+  return { openIssue, closeIssue, openPr, closePr: () => setPrId(null), drawerElements };
 }
 
 /* ------------------------------------------------------------------ */
@@ -63,6 +74,15 @@ export function IssueDrawer({ issueId, onClose, onOpenPr }) {
   const issue = q.data;
   const isMine = !!(issue?.active_claim && user && issue.active_claim.user_id === user.id);
   const canModerate = user?.role === "maintainer" || user?.role === "admin";
+
+  useEffect(() => {
+    const repoId = issue?.repository_id || issue?.repository?.id;
+    if (repoId) {
+      window.dispatchEvent(
+        new CustomEvent("sync-repo-select", { detail: String(repoId) }),
+      );
+    }
+  }, [issue]);
 
   const doClaim = async () => {
     const res = await claim.mutate(issueId);
