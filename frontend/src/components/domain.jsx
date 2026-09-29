@@ -3,12 +3,15 @@ import { Link } from "react-router-dom";
 import { cn } from "@/utils/cn";
 import {
   ACTIVITY_ICON, CONTRIBUTION_FLOW, PLATFORM_LABEL, activityText, difficultyIcon,
-  difficultyTone, pointsFor, statusLabel, timeAgo,
+  difficultyTone, pointsFor, statusLabel,
 } from "@/lib/format";
+import { useAuth } from "@/lib/auth";
 import { githubIssueUrl, githubPrUrl } from "@/lib/api";
+import { routes } from "@/lib/routes";
 import {
   Avatar, Badge, Button, Chip, Panel, ProgressBar, Skeleton, StatusBadge,
 } from "./ui";
+import { RelativeTime } from "./RelativeTime";
 
 /* ------------------------------------------------------------------ */
 /*  FilterBar                                                          */
@@ -72,30 +75,79 @@ export function FilterBar({
 /*  IssueCard + ClaimButton                                            */
 /* ------------------------------------------------------------------ */
 
-export function ClaimButton({ status, points, onClaim, onRelease, pending, disabled, hint }) {
-  if (status === "open")
+export function ClaimButton({
+  status,
+  points,
+  onClaim,
+  onRelease,
+  pending,
+  disabled,
+  hint,
+  isMine,
+  claimedByName,
+}) {
+  if (isMine) {
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge tone="blue" dot>CLAIMED BY YOU</Badge>
+        {onRelease && (
+          <Button
+            variant="red"
+            size="sm"
+            onClick={onRelease}
+            loading={pending}
+            disabled={disabled || pending}
+          >
+            Release claim
+          </Button>
+        )}
+      </div>
+    );
+  }
+
+  if (claimedByName || status === "claimed") {
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge tone="blue" dot>
+          CLAIMED BY {claimedByName ?? "ANOTHER USER"}
+        </Badge>
+      </div>
+    );
+  }
+
+  if (status === "open") {
     return (
       <div className="space-y-1.5">
-        <Button variant="green" onClick={onClaim} loading={pending} disabled={disabled}>
+        <Button
+          variant="green"
+          onClick={onClaim}
+          loading={pending}
+          disabled={disabled || pending}
+        >
           ⚑ Claim Issue
         </Button>
         {hint && <p className="font-mono text-[10px] text-ink-soft">{hint}</p>}
       </div>
     );
+  }
+
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <Badge tone="blue" dot>Claimed</Badge>
-      {onRelease && (
-        <Button variant="red" size="sm" onClick={onRelease} loading={pending}>
-          Release claim
-        </Button>
-      )}
+      <Badge tone="paper">{statusLabel(status)}</Badge>
     </div>
   );
 }
 
-export function IssueCard({ issue, onClaim, pending, compact }) {
+export function IssueCard({ issue, onClaim, onRelease, pending, compact }) {
+  const { user } = useAuth();
   const repoName = issue.repository?.name;
+  const isMine = !!(
+    issue.active_claim &&
+    user &&
+    String(issue.active_claim.user_id) === String(user.id)
+  );
+  const claimedByName = issue.active_claim?.user?.name;
+
   return (
     <Panel hover className="flex h-full flex-col p-4">
       <div className="mb-2.5 flex items-start justify-between gap-3">
@@ -109,18 +161,20 @@ export function IssueCard({ issue, onClaim, pending, compact }) {
         </div>
       </div>
 
-      <button
-        onClick={() => window.dispatchEvent(new CustomEvent("open-issue-drawer", { detail: issue.id }))}
-        className="group text-left"
+      <Link
+        to={routes.issue(issue.id)}
+        className="group block text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gblue"
       >
         <h3 className="break-words font-display text-base font-extrabold leading-snug tracking-tight group-hover:underline group-hover:decoration-gblue group-hover:decoration-2 group-hover:underline-offset-2">
           <span className="font-mono text-ink-soft">#{issue.github_issue_id}</span> {issue.title}
         </h3>
-      </button>
+      </Link>
 
       {!compact && (
         <div className="mt-3 flex flex-wrap items-center gap-1.5">
-          <span className="font-mono text-[11px] text-ink-soft">updated {timeAgo(issue.updated_at)}</span>
+          <span className="font-mono text-[11px] text-ink-soft">
+            <RelativeTime date={issue.updated_at} prefix="updated " />
+          </span>
         </div>
       )}
 
@@ -139,9 +193,13 @@ export function IssueCard({ issue, onClaim, pending, compact }) {
         {onClaim && (
           <ClaimButton
             status={issue.status}
-            points={pts}
+            points={pointsFor(issue.difficulty)}
             pending={pending}
+            disabled={pending || (issue.active_claim && !isMine)}
+            isMine={isMine}
+            claimedByName={claimedByName}
             onClaim={() => onClaim(issue)}
+            onRelease={onRelease ? () => onRelease(issue) : undefined}
           />
         )}
       </div>
@@ -193,12 +251,12 @@ export function PRCard({ pr, showContributor = true }) {
               </span>
             )}
             {pr.linked_issue && (
-              <button
-                type="button"
-                onClick={() => window.dispatchEvent(new CustomEvent("open-issue-drawer", { detail: pr.linked_issue.id }))}
+              <Link
+                to={routes.issue(pr.linked_issue.id)}
+                className="inline-block transition-transform hover:-translate-y-0.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gblue"
               >
                 <Badge tone="blue">Linked Issue #{pr.linked_issue.github_issue_id}</Badge>
-              </button>
+              </Link>
             )}
             {prGithubUrl && (
               <a
@@ -224,7 +282,9 @@ export function PRCard({ pr, showContributor = true }) {
             ) : (
               <span className="text-ink-soft">GitHub Contributor</span>
             )}
-            <span className="text-ink-soft">updated {timeAgo(pr.updated_at)}</span>
+            <span className="text-ink-soft">
+              <RelativeTime date={pr.updated_at} prefix="updated " />
+            </span>
           </div>
         </div>
         {showContributor && pr.user && (
@@ -304,7 +364,9 @@ export function CommitRow({ commit }) {
             PR #{commit.pr_id}
           </span>
         )}
-        <span className="text-ink-soft">{timeAgo(commit.committed_at)}</span>
+        <span className="text-ink-soft">
+          <RelativeTime date={commit.committed_at} />
+        </span>
       </div>
     </div>
   );
@@ -334,7 +396,9 @@ export function Timeline({ events }) {
           />
           <div className="flex flex-wrap items-center gap-2">
             <p className="font-display text-sm font-extrabold uppercase tracking-tight">{statusLabel(e.status)}</p>
-            <span className="font-mono text-[10px] text-ink-soft">{timeAgo(e.timestamp)}</span>
+            <span className="font-mono text-[10px] text-ink-soft">
+              <RelativeTime date={e.timestamp} />
+            </span>
           </div>
           {e.detail && <p className="mt-0.5 text-sm text-ink-soft">{e.detail}</p>}
           <p className="mt-1 font-mono text-[10px] uppercase tracking-wider text-ink-soft/70">
@@ -377,50 +441,69 @@ export function ContributionCard({ c, expandable = true }) {
   const [open, setOpen] = useState(false);
   const issue = c.issue;
   const pr = c.pull_request;
+  const issueId = issue?.id ?? c.issue_id;
+  const issueUrl = issueId ? routes.issue(issueId) : "/dashboard/issues";
+  const issueNum = issue?.github_issue_id ?? issue?.number ?? c.issue_id;
+  const issueTitle = issue?.title || "Untitled Issue";
+
   return (
-    <Panel className="overflow-hidden">
-      <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0 flex-1">
-          <div className="mb-2 flex flex-wrap items-center gap-1.5">
-            <StatusBadge status={c.status} />
-            <StatusBadge status={c.validation_status} />
-            {issue?.difficulty && (
-              <Badge tone="yellow">+{pointsFor(issue.difficulty)} pts</Badge>
-            )}
-          </div>
-          {issue && (
-            <button
-              onClick={() => window.dispatchEvent(new CustomEvent("open-issue-drawer", { detail: issue.id }))}
-              className="block text-left"
-            >
-              <h3 className="break-words font-display text-base font-extrabold leading-snug hover:underline">
-                <span className="font-mono text-ink-soft">#{issue.github_issue_id}</span> {issue.title}
-              </h3>
-            </button>
+    <div className="border-[3px] border-ink bg-white shadow-[5px_5px_0_0_#101010] transition-all hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[7px_7px_0_0_#101010]">
+      <Link
+        to={issueUrl}
+        className="group block p-4 focus-visible:ring-2 focus-visible:ring-gblue focus-visible:outline-none"
+      >
+        {/* Header row: flex flex-wrap items-center gap-x-2 gap-y-1.5 with chips shrink-0 whitespace-nowrap and relative time pushed right */}
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+          <StatusBadge status={c.status} className="shrink-0 whitespace-nowrap" />
+          <StatusBadge status={c.validation_status} className="shrink-0 whitespace-nowrap" />
+          {issue?.difficulty && (
+            <Badge tone="yellow" className="shrink-0 whitespace-nowrap">
+              +{pointsFor(issue.difficulty)} pts
+            </Badge>
           )}
+          <span className="ml-auto font-mono text-[11px] text-ink-soft shrink-0 whitespace-nowrap">
+            <RelativeTime date={c.updated_at} prefix="updated " />
+          </span>
+        </div>
+
+        {/* Title below in ONE flowing paragraph with min-w-0 break-words, issue number inline before the title */}
+        <p className="mt-2 min-w-0 break-words font-display text-base font-extrabold leading-snug tracking-tight text-ink group-hover:underline group-hover:decoration-gblue group-hover:decoration-2">
+          {issueNum && <span className="font-mono text-ink-soft mr-1.5">#{issueNum}</span>}
+          {issueTitle}
+        </p>
+
+        {pr && (
           <p className="mt-1.5 font-mono text-[11px] text-ink-soft">
-            updated {timeAgo(c.updated_at)}
-            {pr && <> · PR #{pr.github_pr_id} ({pr.status})</>}
+            PR #{pr.github_pr_id || pr.number || pr.id} ({pr.status})
           </p>
-        </div>
-        <div className="shrink-0 sm:text-right">
+        )}
+      </Link>
+
+      <div className="border-t-2 border-dashed border-paper-3 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 min-w-0">
+        <div className="min-w-0 flex-1 overflow-x-auto no-scrollbar">
           <StateMachineStrip current={c.status} />
-          {expandable && (c.timeline_json?.length > 0) && (
-            <button
-              onClick={() => setOpen((o) => !o)}
-              className="mt-2 font-mono text-[11px] font-bold uppercase underline decoration-dotted"
-            >
-              {open ? "Hide timeline ▲" : "View timeline ▼"}
-            </button>
-          )}
         </div>
+        {expandable && Array.isArray(c.timeline_json) && c.timeline_json.length > 0 && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setOpen((o) => !o);
+            }}
+            className="shrink-0 font-mono text-[11px] font-bold uppercase underline decoration-dotted hover:text-gblue"
+          >
+            {open ? "Hide timeline ▲" : "View timeline ▼"}
+          </button>
+        )}
       </div>
+
       {open && (
         <div className="border-t-[3px] border-ink bg-paper-2/40 p-4">
           <Timeline events={c.timeline_json} />
         </div>
       )}
-    </Panel>
+    </div>
   );
 }
 
@@ -445,7 +528,7 @@ export function ActivityRow({ item }) {
           <p className="mt-0.5 truncate font-display text-xs font-bold">{item.target.title}</p>
         )}
         <p className="mt-0.5 font-mono text-[10px] uppercase tracking-wider text-ink-soft">
-          {item.type?.replace(/_/g, " ")} · {timeAgo(item.created_at)}
+          {item.type?.replace(/_/g, " ")} · <RelativeTime date={item.created_at} />
         </p>
       </div>
     </div>
@@ -454,26 +537,45 @@ export function ActivityRow({ item }) {
 }
 
 /** Backend notification payload: { title?, message?, pr_id?, issue_id? ... } */
-export function NotificationRow({ n, onRead }) {
+export function NotificationRow({ n, onRead, onClick }) {
   const p = n.payload || {};
   const tone =
     String(n.type).includes("merged") ? "bg-ggreen-light"
     : String(n.type).includes("review") ? "bg-gyellow-light"
     : "bg-white";
   return (
-    <div className={cn("flex items-start gap-3 border-b-2 border-dashed border-paper-3 p-4 last:border-0", !n.read && tone)}>
-      {!n.read && <span className="mt-2 h-2.5 w-2.5 shrink-0 rounded-full bg-gblue" />}
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => onClick && onClick(n)}
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick && onClick(n);
+        }
+      }}
+      className={cn(
+        "flex cursor-pointer items-start gap-3 border-b-2 border-dashed border-paper-3 p-4 transition-colors last:border-0 hover:bg-gyellow-light/70 focus-visible:ring-2 focus-visible:ring-gblue focus-visible:outline-none",
+        !n.read && tone,
+      )}
+    >
+      {!n.read && <span className="mt-2 h-2.5 w-2.5 shrink-0 rounded-full bg-gblue" aria-label="Unread" />}
       <div className="min-w-0 flex-1">
         <p className="font-display text-sm font-extrabold">{p.title || statusLabel(n.type)}</p>
         <p className="mt-0.5 text-sm text-ink-soft">{p.message || p.detail || ""}</p>
         <p className="mt-1.5 font-mono text-[10px] uppercase tracking-wider text-ink-soft">
-          {String(n.type).replace(/_/g, " ")} · {timeAgo(n.created_at)}
+          {String(n.type).replace(/_/g, " ")} · <RelativeTime date={n.created_at} />
         </p>
       </div>
-      {!n.read && (
+      {!n.read && onRead && (
         <button
-          onClick={() => onRead(n.id)}
-          className="shrink-0 border-2 border-ink bg-ink px-2 py-1 font-mono text-[10px] font-bold uppercase text-paper hover:bg-ggreen"
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onRead(n.id);
+          }}
+          className="shrink-0 border-2 border-ink bg-ink px-2 py-1 font-mono text-[10px] font-bold uppercase text-paper hover:bg-ggreen focus-visible:ring-2 focus-visible:ring-gblue"
+          aria-label="Mark as read"
         >
           Read
         </button>

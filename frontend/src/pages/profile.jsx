@@ -7,26 +7,51 @@
  *   PATCH /users/me  { name?, github_username? }
  *   GET   /contributions/{user_id}        → timeline for the public view
  */
-import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useData, useMutation } from "@/lib/hooks";
-import { compact, fullDate, statusLabel, timeAgo } from "@/lib/format";
+import { compact, fullDate, statusLabel } from "@/lib/format";
+import { routes, isValidStatus } from "@/lib/routes";
 import { PageHeader, UpdatedPill } from "@/components/Layout";
 import {
   Avatar, Badge, Button, EmptyState, ErrorState, Field, Input, LinkButton,
   LoadingBlock, Panel, SectionHeading, StatCard, StatusBadge,
 } from "@/components/ui";
 import { ContributionCard } from "@/components/domain";
+import { dedupeByIssue, computeContributionCounts } from "@/lib/contributions";
+import { cn } from "@/utils/cn";
 
-export default function Profile() {
+const STATUS_TABS = [
+  { key: "all", label: "All" },
+  { key: "claimed", label: "Claimed" },
+  { key: "in_progress", label: "In progress" },
+  { key: "pr_submitted", label: "PR submitted" },
+  { key: "under_review", label: "Under review" },
+  { key: "changes_requested", label: "Changes requested" },
+  { key: "accepted", label: "Accepted" },
+  { key: "merged", label: "Merged" },
+];
+
+export function ProfileContent() {
   const { userId } = useParams();
   const { user } = useAuth();
   const isSelf = !userId || (user && String(userId) === String(user.id));
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState(null);
   const [flash, setFlash] = useState(null);
+
+  const [searchParams, setSearchParams] = useSearchParams();
+  const rawStatus = searchParams.get("status");
+  const activeStatus = isValidStatus(rawStatus) ? rawStatus.toLowerCase() : "all";
+
+  useEffect(() => {
+    if (rawStatus !== null && !isValidStatus(rawStatus)) {
+      searchParams.delete("status");
+      setSearchParams(searchParams, { replace: true });
+    }
+  }, [rawStatus, searchParams, setSearchParams]);
 
   const q = useData(
     () => (isSelf ? api.myProfile() : api.publicProfile(userId)),
@@ -68,8 +93,15 @@ export default function Profile() {
     );
 
   const p = q.data;
-  const contributions = contribs.data?.items || [];
+  const rawContributions = contribs.data?.items || [];
+  const contributions = dedupeByIssue(rawContributions);
+  const timelineCounts = computeContributionCounts(contributions);
   const mergedCount = p.merged_prs_count ?? 0;
+
+  const filteredContributions = useMemo(
+    () => contributions.filter((c) => activeStatus === "all" || c.status === activeStatus),
+    [contributions, activeStatus],
+  );
 
   return (
     <>
@@ -157,9 +189,9 @@ export default function Profile() {
           <Panel className="p-5">
             <SectionHeading title="Stats" subtitle="Computed from webhooks — read-only." />
             <div className="grid grid-cols-2 gap-3">
-              <StatCard label="Contributions" value={compact(p.contributions_count ?? contributions.length)} tone="blue" />
-              <StatCard label="Merged PRs" value={compact(mergedCount)} tone="green" />
-              <StatCard label="Active claims" value={p.active_claims_count ?? 0} tone="yellow" />
+              <StatCard label="Contributions" value={compact(p.contributions_count ?? contributions.length)} tone="blue" to={isSelf ? routes.profile(undefined, "all") : undefined} />
+              <StatCard label="Merged PRs" value={compact(mergedCount)} tone="green" to={isSelf ? routes.profile(undefined, "merged") : undefined} />
+              <StatCard label="Active claims" value={p.active_claims_count ?? 0} tone="yellow" to={isSelf ? routes.issues({ status: "claimed" }) : undefined} />
               <StatCard label="Role" value={statusLabel(p.role)} tone="purple" />
             </div>
           </Panel>
@@ -181,29 +213,97 @@ export default function Profile() {
                 action={isSelf ? <LinkButton to="/dashboard/issues" variant="green">Browse issues</LinkButton> : undefined}
               />
             )}
-            {contribs.data && (
+            {contribs.data && contributions.length > 0 && (
               <>
                 <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
                   {[
-                    ["Total", contribs.data.total_contributions],
-                    ["Valid", contribs.data.valid_contributions_count],
-                    ["Merged", contribs.data.merged_count],
-                    ["In progress", contribs.data.in_progress_count],
-                  ].map(([l, v]) => (
-                    <div key={l} className="border-2 border-ink bg-paper-2/50 p-3">
+                    ["Total", timelineCounts.total, routes.profile(userId, undefined)],
+                    ["Valid", timelineCounts.valid, routes.profile(userId, undefined)],
+                    ["Merged", timelineCounts.merged, routes.profile(userId, "merged")],
+                    ["In progress", timelineCounts.inProgress, routes.profile(userId, "in_progress")],
+                  ].map(([l, v, to]) => (
+                    <Link
+                      key={l}
+                      to={to}
+                      className="border-2 border-ink bg-paper-2/50 p-3 transition-all hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[3px_3px_0_0_#101010] focus-visible:ring-2 focus-visible:ring-gblue"
+                    >
                       <p className="font-display text-2xl font-extrabold leading-none">{v}</p>
                       <p className="font-mono text-[10px] uppercase tracking-wider text-ink-soft">{l}</p>
-                    </div>
+                    </Link>
                   ))}
                 </div>
-                <div className="space-y-3">
-                  {contributions.map((c) => <ContributionCard key={c.id} c={c} expandable={false} />)}
+
+                <div className="min-w-0 mb-4">
+                  <div
+                    role="tablist"
+                    aria-label="Profile contribution status tabs"
+                    className="no-scrollbar flex gap-2 overflow-x-auto border-b-[3px] border-ink pb-2 scroll-smooth snap-x snap-mandatory"
+                  >
+                    {STATUS_TABS.map((t) => {
+                      const count = timelineCounts.statusCounts[t.key] ?? (t.key === "all" ? timelineCounts.total : 0);
+                      const isSelected = activeStatus === t.key;
+                      return (
+                        <Link
+                          key={t.key}
+                          role="tab"
+                          id={`profile-tab-${t.key}`}
+                          aria-selected={isSelected}
+                          aria-controls={`profile-tabpanel-${t.key}`}
+                          to={routes.profile(userId, t.key === "all" ? undefined : t.key)}
+                          className={cn(
+                            "shrink-0 whitespace-nowrap snap-start border-2 border-ink px-3.5 py-1.5 font-display text-xs font-bold uppercase tracking-wide transition-all focus-visible:ring-2 focus-visible:ring-gblue",
+                            isSelected
+                              ? "bg-ink text-gyellow shadow-[3px_3px_0_0_#101010]"
+                              : "bg-white hover:bg-gyellow-light",
+                          )}
+                        >
+                          {t.label}
+                          {count > 0 ? <span className="ml-1.5 font-mono opacity-70">({count})</span> : null}
+                        </Link>
+                      );
+                    })}
+                  </div>
                 </div>
+
+                {filteredContributions.length === 0 ? (
+                  <EmptyState
+                    title={`No items in "${statusLabel(activeStatus)}"`}
+                    body={
+                      activeStatus === "all"
+                        ? "No contributions available."
+                        : `No contributions found with status "${statusLabel(activeStatus)}".`
+                    }
+                    action={
+                      <LinkButton to={routes.profile(userId, undefined)} variant="paper">
+                        View all contributions
+                      </LinkButton>
+                    }
+                  />
+                ) : (
+                  <div
+                    role="tabpanel"
+                    id={`profile-tabpanel-${activeStatus}`}
+                    aria-labelledby={`profile-tab-${activeStatus}`}
+                    className="space-y-3"
+                  >
+                    {filteredContributions.map((c) => (
+                      <ContributionCard key={c.id} c={c} expandable={false} />
+                    ))}
+                  </div>
+                )}
               </>
             )}
           </Panel>
         </div>
       </div>
     </>
+  );
+}
+
+export default function Profile() {
+  return (
+    <Suspense fallback={<LoadingBlock rows={6} />}>
+      <ProfileContent />
+    </Suspense>
   );
 }

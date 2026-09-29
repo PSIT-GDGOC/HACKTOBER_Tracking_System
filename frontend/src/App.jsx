@@ -2,6 +2,7 @@ import { HashRouter, Navigate, Route, Routes } from "react-router-dom";
 import React from "react";
 import { AuthProvider, RequireRole } from "@/lib/auth";
 import { AppShell } from "@/components/Layout";
+import { ToastContainer } from "@/components/Toast";
 import { ErrorBoundary } from "@/pages/misc";
 import Landing from "@/pages/Landing";
 import { AuthWizard, Login, GitHubOAuthCallback, VerifyEmail, ResetPassword } from "@/pages/auth";
@@ -19,6 +20,7 @@ export default function App() {
     <ErrorBoundary>
       <AuthProvider>
         <HashRouter>
+          <ToastContainer />
           <Routes>
             {/* ---------- public ---------- */}
             <Route path="/" element={<Landing />} />

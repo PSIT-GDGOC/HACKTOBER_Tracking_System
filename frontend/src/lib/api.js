@@ -59,10 +59,11 @@ export const tokenStore = {
 };
 
 export class ApiError extends Error {
-  constructor(status, detail) {
+  constructor(status, detail, code) {
     super(detail || `Request failed (${status})`);
     this.status = status;
     this.detail = detail || `Request failed (${status})`;
+    this.code = code;
   }
 }
 
@@ -92,9 +93,10 @@ async function request(path, { method = "GET", body, headers } = {}) {
         : Array.isArray(payload?.detail)
           ? payload.detail.map((d) => d.msg || JSON.stringify(d)).join(", ")
           : res.statusText || "Unexpected error";
+    const code = payload?.code || payload?.error_code;
     // A rejected token shouldn't keep the app in a broken state.
     if (res.status === 401 && token) tokenStore.clear();
-    throw new ApiError(res.status, detail);
+    throw new ApiError(res.status, detail, code);
   }
   return payload;
 }

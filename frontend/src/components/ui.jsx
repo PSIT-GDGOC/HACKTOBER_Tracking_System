@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import { cn } from "@/utils/cn";
 import { statusLabel, statusTone } from "@/lib/format";
@@ -242,13 +242,18 @@ export function Toggle({ checked, onChange, label, description }) {
 /*  data display                                                       */
 /* ------------------------------------------------------------------ */
 
-export function StatCard({ label, value, sub, tone = "blue" }) {
+export function StatCard({ label, value, sub, tone = "blue", to }) {
   const bar = {
     blue: "bg-gblue", red: "bg-gred", yellow: "bg-gyellow", green: "bg-ggreen",
     purple: "bg-gpurple", ink: "bg-ink", paper: "bg-paper-3",
   }[tone];
-  return (
-    <div className="relative overflow-hidden border-[3px] border-ink bg-white shadow-[5px_5px_0_0_#101010]">
+  const content = (
+    <div
+      className={cn(
+        "relative overflow-hidden border-[3px] border-ink bg-white shadow-[5px_5px_0_0_#101010] transition-all",
+        to && "hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[7px_7px_0_0_#101010] focus-visible:ring-2 focus-visible:ring-gblue",
+      )}
+    >
       <div className={cn("h-2 w-full border-b-[3px] border-ink", bar)} />
       <div className="p-4">
         <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-soft">{label}</p>
@@ -257,6 +262,7 @@ export function StatCard({ label, value, sub, tone = "blue" }) {
       </div>
     </div>
   );
+  return to ? <Link to={to} className="block transition-transform">{content}</Link> : content;
 }
 
 export function SectionHeading({ title, subtitle, action, id }) {
@@ -412,14 +418,28 @@ export function Pagination({ page, totalPages, onPage }) {
 }
 
 export function Modal({ open, onClose, title, children, wide }) {
+  const modalRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open, onClose]);
+
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-modal="true" aria-label={title}>
       <div className="absolute inset-0 bg-ink/60" onClick={onClose} aria-hidden />
-      <div className={cn("relative z-10 w-full border-[4px] border-ink bg-white shadow-[10px_10px_0_0_#101010] animate-pop", wide ? "max-w-2xl" : "max-w-lg")}>
+      <div ref={modalRef} className={cn("relative z-10 w-full border-[4px] border-ink bg-white shadow-[10px_10px_0_0_#101010] animate-pop", wide ? "max-w-2xl" : "max-w-lg")}>
         <div className="flex items-center justify-between border-b-[3px] border-ink bg-gyellow px-4 py-3">
           <h3 className="font-display text-base font-extrabold uppercase">{title}</h3>
-          <button onClick={onClose} aria-label="Close" className="border-2 border-ink bg-white px-2 font-display font-extrabold hover:bg-gred hover:text-white">✕</button>
+          <button onClick={onClose} aria-label="Close dialog" className="border-2 border-ink bg-white px-2 font-display font-extrabold hover:bg-gred hover:text-white focus-visible:ring-2 focus-visible:ring-gblue">✕</button>
         </div>
         <div className="max-h-[70vh] overflow-y-auto p-5">{children}</div>
       </div>
@@ -429,14 +449,56 @@ export function Modal({ open, onClose, title, children, wide }) {
 
 /** Slide-over drawer used for issue / PR detail views. */
 export function Drawer({ open, onClose, title, children }) {
+  const asideRef = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onKeyDown = (e) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+      } else if (e.key === "Tab") {
+        if (!asideRef.current) return;
+        const focusables = asideRef.current.querySelectorAll(
+          'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        );
+        if (focusables.length === 0) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        if (e.shiftKey) {
+          if (document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+          }
+        } else {
+          if (document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [open, onClose]);
+
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50">
+    <div className="fixed inset-0 z-50" role="dialog" aria-modal="true" aria-label={title}>
       <div className="absolute inset-0 bg-ink/50" onClick={onClose} aria-hidden />
-      <aside className="absolute inset-y-0 right-0 flex w-[min(94vw,560px)] flex-col border-l-[4px] border-ink bg-paper shadow-[-10px_0_0_0_rgba(16,16,16,0.15)]">
+      <aside
+        ref={asideRef}
+        className="absolute inset-y-0 right-0 flex w-full sm:max-w-md flex-col border-l-[4px] border-ink bg-paper shadow-[-10px_0_0_0_rgba(16,16,16,0.15)] animate-slide"
+      >
         <div className="flex items-center justify-between border-b-[3px] border-ink bg-gyellow px-4 py-3">
           <h3 className="min-w-0 truncate font-display text-base font-extrabold uppercase">{title}</h3>
-          <button onClick={onClose} aria-label="Close" className="border-2 border-ink bg-white px-2 font-display font-extrabold hover:bg-gred hover:text-white">✕</button>
+          <button
+            onClick={onClose}
+            aria-label="Close drawer"
+            className="border-2 border-ink bg-white px-2.5 py-1 font-display font-extrabold hover:bg-gred hover:text-white focus-visible:ring-2 focus-visible:ring-gblue"
+          >
+            ✕
+          </button>
         </div>
         <div className="flex-1 overflow-y-auto p-4 sm:p-5">{children}</div>
       </aside>

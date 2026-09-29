@@ -4,47 +4,60 @@
  * "open-issue-drawer" / "open-pr-drawer" window events; pages drop in
  * `useDrawers()` and render `drawerElements`.
  */
-import { useCallback, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { api, githubIssueUrl, githubPrUrl, pointsFor } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useData, useMutation } from "@/lib/hooks";
-import { fullDate, statusLabel, timeAgo } from "@/lib/format";
+import { fullDate, statusLabel } from "@/lib/format";
+import { useIssueParam } from "@/lib/routes";
+import { RelativeTime } from "./RelativeTime";
+import { toast } from "./Toast";
 import { cn } from "@/utils/cn";
 import { Badge, Button, Drawer, EmptyState, LoadingBlock, Panel, StatusBadge } from "./ui";
 
 export function useDrawers() {
-  const [issueId, setIssueId] = useState(null);
+  const { issueId, openIssue, closeIssue } = useIssueParam();
   const [prId, setPrId] = useState(null);
 
   useEffect(() => {
     const onIssue = (e) => openIssue(e.detail);
-    const onPr = (e) => openPr(e.detail);
+    const onPr = (e) => {
+      closeIssue();
+      setPrId(e.detail || null);
+    };
     window.addEventListener("open-issue-drawer", onIssue);
     window.addEventListener("open-pr-drawer", onPr);
     return () => {
       window.removeEventListener("open-issue-drawer", onIssue);
       window.removeEventListener("open-pr-drawer", onPr);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [openIssue, closeIssue]);
 
-  const openIssue = useCallback((id) => {
-    setPrId(null);
-    setIssueId(id || null);
-  }, []);
-  const openPr = useCallback((id) => {
-    setIssueId(null);
-    setPrId(id || null);
-  }, []);
-
-  const drawerElements = (
-    <>
-      {issueId && <IssueDrawer issueId={issueId} onClose={() => setIssueId(null)} onOpenPr={openPr} />}
-      {prId && <PRDrawer prId={prId} onClose={() => setPrId(null)} onOpenIssue={openIssue} />}
-    </>
+  const openPr = useCallback(
+    (id) => {
+      closeIssue();
+      setPrId(id || null);
+    },
+    [closeIssue],
   );
 
-  return { openIssue, openPr, drawerElements };
+  const drawerElements = (
+    <Suspense fallback={null}>
+      {issueId && <IssueDrawer issueId={issueId} onClose={closeIssue} onOpenPr={openPr} />}
+      {prId && (
+        <PRDrawer
+          prId={prId}
+          onClose={() => setPrId(null)}
+          onOpenIssue={(id) => {
+            setPrId(null);
+            openIssue(id);
+          }}
+        />
+      )}
+    </Suspense>
+  );
+
+  return { openIssue, closeIssue, openPr, closePr: () => setPrId(null), drawerElements };
 }
 
 /* ------------------------------------------------------------------ */
@@ -62,23 +75,53 @@ export function IssueDrawer({ issueId, onClose, onOpenPr }) {
   const isMine = !!(issue?.active_claim && user && issue.active_claim.user_id === user.id);
   const canModerate = user?.role === "maintainer" || user?.role === "admin";
 
+  useEffect(() => {
+    const repoId = issue?.repository_id || issue?.repository?.id;
+    if (repoId) {
+      window.dispatchEvent(
+        new CustomEvent("sync-repo-select", { detail: String(repoId) }),
+      );
+    }
+  }, [issue]);
+
   const doClaim = async () => {
     const res = await claim.mutate(issueId);
     if (res) {
-      setFlash(`Claim locked — you own this issue now. The claim is atomic, so nobody else can take it.`);
+      toast("Claim locked — you own this issue now.", { tone: "green" });
+      setFlash("Claim locked — you own this issue now.");
       q.refetch();
-    } else if (claim.error) {
-      setFlash(claim.error);
+    } else {
+      const err = claim.lastError;
+      if (
+        err?.status === 409 ||
+        err?.code === "ALREADY_CLAIMED" ||
+        err?.code === "CLAIM_CONFLICT" ||
+        err?.detail?.toLowerCase()?.includes("already claimed") ||
+        err?.detail?.toLowerCase()?.includes("conflict")
+      ) {
+        toast("Someone just claimed this issue", { tone: "yellow" });
+        setFlash("Someone just claimed this issue");
+      } else {
+        const msg = claim.error || "Failed to claim issue";
+        toast(msg, { tone: "red" });
+        setFlash(msg);
+      }
+      q.refetch();
     }
   };
 
   const doRelease = async () => {
     const res = await unclaim.mutate(issueId);
     if (res) {
-      setFlash(res.message || "Claim released.");
+      const msg = res.message || "Claim released.";
+      toast(msg, { tone: "green" });
+      setFlash(msg);
       q.refetch();
-    } else if (unclaim.error) {
-      setFlash(unclaim.error);
+    } else {
+      const msg = unclaim.error || "Failed to release claim";
+      toast(msg, { tone: "red" });
+      setFlash(msg);
+      q.refetch();
     }
   };
 
@@ -102,8 +145,8 @@ export function IssueDrawer({ issueId, onClose, onOpenPr }) {
           <h2 className="font-display text-xl font-extrabold leading-tight tracking-tight">{issue.title}</h2>
 
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[11px] text-ink-soft">
-            <span>opened {timeAgo(issue.created_at)}</span>
-            <span>updated {timeAgo(issue.updated_at)}</span>
+            <span>opened <RelativeTime date={issue.created_at} /></span>
+            <span>updated <RelativeTime date={issue.updated_at} /></span>
             {issue.repository && (
               <a
                 href={githubIssueUrl(issue.repository, issue) ?? issue.repository.github_repo_url}
@@ -141,9 +184,14 @@ export function IssueDrawer({ issueId, onClose, onOpenPr }) {
 
           <Panel className="p-4">
             <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-soft">Claim</p>
-            {issue.status === "open" ? (
+            {issue.status === "open" && !issue.active_claim ? (
               <div className="mt-2">
-                <Button variant="green" onClick={doClaim} loading={claim.pending}>
+                <Button
+                  variant="green"
+                  onClick={doClaim}
+                  loading={claim.pending}
+                  disabled={claim.pending}
+                >
                   ⚑ Claim for {pointsFor(issue)} pts
                 </Button>
                 <p className="mt-2 font-mono text-[10px] text-ink-soft">
@@ -154,15 +202,25 @@ export function IssueDrawer({ issueId, onClose, onOpenPr }) {
               <div className="mt-2 space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge tone="blue" dot>
-                    claimed by {issue.active_claim.user?.name ?? "a student"}
+                    {isMine
+                      ? "CLAIMED BY YOU"
+                      : `CLAIMED BY ${issue.active_claim.user?.name ?? "ANOTHER STUDENT"}`}
                   </Badge>
                   {issue.active_claim.user?.github_username && (
                     <span className="font-mono text-[10px] text-ink-soft">@{issue.active_claim.user.github_username}</span>
                   )}
-                  <span className="font-mono text-[10px] text-ink-soft">{timeAgo(issue.active_claim.claimed_at)}</span>
+                  <span className="font-mono text-[10px] text-ink-soft">
+                    <RelativeTime date={issue.active_claim.claimed_at} />
+                  </span>
                 </div>
                 {(isMine || canModerate) && (
-                  <Button variant="red" size="sm" onClick={doRelease} loading={unclaim.pending}>
+                  <Button
+                    variant="red"
+                    size="sm"
+                    onClick={doRelease}
+                    loading={unclaim.pending}
+                    disabled={unclaim.pending}
+                  >
                     Release claim
                   </Button>
                 )}
@@ -196,7 +254,9 @@ export function PRDrawer({ prId, onClose, onOpenIssue }) {
           <div className="flex flex-wrap items-center gap-1.5">
             <StatusBadge status={pr.status} />
             {pr.repository && <Badge tone="paper">{pr.repository.name}</Badge>}
-            <span className="font-mono text-[10px] text-ink-soft">{timeAgo(pr.created_at)}</span>
+            <span className="font-mono text-[10px] text-ink-soft">
+              <RelativeTime date={pr.created_at} />
+            </span>
           </div>
 
           <h2 className="font-display text-xl font-extrabold leading-tight tracking-tight">{pr.title}</h2>
