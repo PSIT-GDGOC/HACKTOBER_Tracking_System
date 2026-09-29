@@ -1383,12 +1383,13 @@ export function ResetPassword() {
 
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [otpCode, setOtpCode] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState(null);
   const [success, setSuccess] = useState(false);
   const [pending, setPending] = useState(false);
 
-  // Fallback mode if no token in URL: request reset link
+  // Fallback mode if no token in URL: request reset link / OTP
   const [emailInput, setEmailInput] = useState("");
   const [linkSent, setLinkSent] = useState(false);
   const [linkSentMsg, setLinkSentMsg] = useState("");
@@ -1399,6 +1400,10 @@ export function ResetPassword() {
     e.preventDefault();
     setError(null);
 
+    if (!token && (!otpCode.trim() || otpCode.trim().length !== 6)) {
+      setError("Enter the 6-digit verification code sent to your email.");
+      return;
+    }
     if (newPassword.length < 8) {
       setError("Password must be at least 8 characters long.");
       return;
@@ -1416,13 +1421,14 @@ export function ResetPassword() {
 
     setPending(true);
     try {
-      await api.resetPassword({
-        token,
-        new_password: newPassword,
-      });
+      await api.resetPassword(
+        token
+          ? { token, new_password: newPassword }
+          : { identifier: emailInput.trim(), otp: otpCode.trim(), new_password: newPassword }
+      );
       setSuccess(true);
     } catch (err) {
-      setError(err?.detail || err?.message || "Failed to reset password. Link may be expired.");
+      setError(err?.detail || err?.message || "Failed to reset password. Please check your verification code.");
     } finally {
       setPending(false);
     }
@@ -1463,66 +1469,110 @@ export function ResetPassword() {
           </div>
 
           <h1 className="mt-6 font-display text-3xl font-extrabold uppercase leading-none tracking-tight">
-            Reset Password
+            {success ? "Reset Password" : (token || linkSent ? "Set New Password" : "Forgot Password")}
           </h1>
 
-          {token ? (
-            /* Reset with Token flow */
-            success ? (
-              <div className="mt-6 space-y-4">
-                <div className="border-[3px] border-ink bg-ggreen-light p-4 shadow-[4px_4px_0_0_#101010]">
-                  <Badge tone="green" dot>Success</Badge>
-                  <p className="mt-2 font-display text-base font-bold text-ink">
-                    Password Reset Complete
-                  </p>
-                  <p className="mt-1 font-mono text-xs text-ink-soft">
-                    Your password has been updated successfully. You can now log in using your new credentials.
-                  </p>
-                </div>
-                <Button variant="green" size="lg" className="w-full" onClick={() => nav("/login")}>
-                  Log in Now →
-                </Button>
-              </div>
-            ) : (
-              <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-                <p className="text-sm text-ink-soft">
-                  Enter your new password below. It must be at least 8 characters with letters and numbers.
+          {success ? (
+            <div className="mt-6 space-y-4">
+              <div className="border-[3px] border-ink bg-ggreen-light p-4 shadow-[4px_4px_0_0_#101010]">
+                <Badge tone="green" dot>Success</Badge>
+                <p className="mt-2 font-display text-base font-bold text-ink">
+                  Password Reset Complete
                 </p>
+                <p className="mt-1 font-mono text-xs text-ink-soft">
+                  Your password has been updated successfully. You can now log in using your new credentials.
+                </p>
+              </div>
+              <Button variant="green" size="lg" className="w-full" onClick={() => nav("/login")}>
+                Log in Now →
+              </Button>
+            </div>
+          ) : (token || linkSent) ? (
+            <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+              {linkSent && !token && linkSentMsg && (
+                <div className="border-[2px] border-ink bg-gyellow-light p-3 text-xs font-mono font-bold text-ink">
+                  ✉ {linkSentMsg}
+                </div>
+              )}
 
-                <Field label="New Password">
-                  <div className="relative">
-                    <Input
-                      type={showPassword ? "text" : "password"}
-                      value={newPassword}
-                      onChange={(e) => setNewPassword(e.target.value)}
-                      placeholder="••••••••"
-                      className="font-mono pr-14"
-                      autoFocus
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono font-bold uppercase text-ink-soft hover:text-ink"
-                    >
-                      {showPassword ? "Hide" : "Show"}
-                    </button>
-                  </div>
+              {!token && (
+                <Field label="6-Digit Verification Code" hint="check your email inbox">
+                  <Input
+                    value={otpCode}
+                    onChange={(e) => setOtpCode(e.target.value.trim())}
+                    placeholder="123456"
+                    maxLength={6}
+                    className="font-mono tracking-widest text-center text-lg font-bold"
+                    autoFocus
+                  />
                 </Field>
+              )}
 
-                <Field label="Confirm New Password">
+              <Field label="New Password" hint="min. 8 chars with letters & numbers">
+                <div className="relative">
                   <Input
                     type={showPassword ? "text" : "password"}
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
                     placeholder="••••••••"
+                    className="font-mono pr-14"
+                    autoFocus={!!token}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword(!showPassword)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono font-bold uppercase text-ink-soft hover:text-ink"
+                  >
+                    {showPassword ? "Hide" : "Show"}
+                  </button>
+                </div>
+              </Field>
+
+              <Field label="Confirm New Password">
+                <Input
+                  type={showPassword ? "text" : "password"}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="••••••••"
+                  className="font-mono"
+                />
+              </Field>
+
+              {error && <p className="font-mono text-xs font-bold text-gred">▲ {error}</p>}
+
+              <Button type="submit" variant="green" size="lg" loading={pending} className="w-full">
+                Update Password &amp; Save →
+              </Button>
+
+              <p className="text-center">
+                <Link to="/login" className="font-mono text-xs font-bold uppercase underline text-ink-soft hover:text-ink">
+                  ← Back to Login
+                </Link>
+              </p>
+            </form>
+          ) : (
+            /* No Token: request a reset link / OTP */
+            <div className="mt-6 space-y-4">
+              <p className="text-sm text-ink-soft">
+                Enter your registered PSIT roll number or email address. We will send a 6-digit verification code to your email.
+              </p>
+
+              <form onSubmit={handleSendResetLink} className="space-y-4">
+                <Field label="Roll Number or Email Address">
+                  <Input
+                    type="text"
+                    value={emailInput}
+                    onChange={(e) => setEmailInput(e.target.value)}
+                    placeholder="2200320100001 or student@gmail.com"
                     className="font-mono"
+                    autoFocus
                   />
                 </Field>
 
-                {error && <p className="font-mono text-xs font-bold text-gred">▲ {error}</p>}
+                {linkError && <p className="font-mono text-xs font-bold text-gred">▲ {linkError}</p>}
 
-                <Button type="submit" variant="blue" size="lg" loading={pending} className="w-full">
-                  Update Password →
+                <Button type="submit" variant="yellow" size="lg" loading={linkPending} className="w-full">
+                  Send Reset Code →
                 </Button>
 
                 <p className="text-center">
@@ -1531,55 +1581,6 @@ export function ResetPassword() {
                   </Link>
                 </p>
               </form>
-            )
-          ) : (
-            /* No Token: request a reset link */
-            <div className="mt-6 space-y-4">
-              <p className="text-sm text-ink-soft">
-                Enter your registered PSIT roll number or email address to receive password reset instructions.
-              </p>
-
-              {linkSent ? (
-                <div className="border-[3px] border-ink bg-gyellow-light p-4 shadow-[4px_4px_0_0_#101010]">
-                  <Badge tone="yellow" dot>Check Your Email</Badge>
-                  <p className="mt-2 text-xs font-mono font-bold text-ink">
-                    {linkSentMsg}
-                  </p>
-                  <p className="mt-1 font-mono text-[11px] text-ink-soft">
-                    Please check your inbox (and spam folder). The link expires in 30 minutes.
-                  </p>
-                  <Link to="/login" className="mt-4 block">
-                    <Button variant="paper" size="sm" className="w-full">
-                      Return to Login
-                    </Button>
-                  </Link>
-                </div>
-              ) : (
-                <form onSubmit={handleSendResetLink} className="space-y-4">
-                  <Field label="Roll Number or Email Address">
-                    <Input
-                      type="text"
-                      value={emailInput}
-                      onChange={(e) => setEmailInput(e.target.value)}
-                      placeholder="2200320100001 or student@gmail.com"
-                      className="font-mono"
-                      autoFocus
-                    />
-                  </Field>
-
-                  {linkError && <p className="font-mono text-xs font-bold text-gred">▲ {linkError}</p>}
-
-                  <Button type="submit" variant="yellow" size="lg" loading={linkPending} className="w-full">
-                    Send Reset Instructions →
-                  </Button>
-
-                  <p className="text-center">
-                    <Link to="/login" className="font-mono text-xs font-bold uppercase underline text-ink-soft hover:text-ink">
-                      ← Back to Login
-                    </Link>
-                  </p>
-                </form>
-              )}
             </div>
           )}
         </Panel>

@@ -28,6 +28,18 @@ export function StudentDashboardContent() {
   const contribs = useData(() => api.myContributions(), [tab === "contributions"], { enabled: tab === "contributions" });
   const myIssues = useData(() => api.issues({ status: "claimed", limit: 100 }), [tab === "my-issues"], { enabled: tab === "my-issues" });
 
+  const dedupedContribs = useMemo(
+    () => dedupeByIssue(contribs.data?.items || []),
+    [contribs.data?.items],
+  );
+  const inReview = useMemo(
+    () =>
+      dedupedContribs.filter((c) =>
+        ["pr_submitted", "under_review", "changes_requested", "accepted"].includes(c.status),
+      ),
+    [dedupedContribs],
+  );
+
   if (dash.loading && !dash.data)
     return (
       <>
@@ -41,17 +53,6 @@ export function StudentDashboardContent() {
   const d = dash.data;
   const myClaimedIssues = (myIssues.data?.items || []).filter(
     (i) => i.active_claim && user && i.active_claim.user_id === user.id,
-  );
-  const dedupedContribs = useMemo(
-    () => dedupeByIssue(contribs.data?.items || []),
-    [contribs.data?.items],
-  );
-  const inReview = useMemo(
-    () =>
-      dedupedContribs.filter((c) =>
-        ["pr_submitted", "under_review", "changes_requested", "accepted"].includes(c.status),
-      ),
-    [dedupedContribs],
   );
 
   return (

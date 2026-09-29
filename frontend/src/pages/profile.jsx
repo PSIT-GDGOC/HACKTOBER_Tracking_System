@@ -36,7 +36,7 @@ const STATUS_TABS = [
 
 export function ProfileContent() {
   const { userId } = useParams();
-  const { user } = useAuth();
+  const { user, refreshUser } = useAuth();
   const isSelf = !userId || (user && String(userId) === String(user.id));
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState(null);
@@ -68,6 +68,14 @@ export function ProfileContent() {
     if (q.data) setForm({ name: q.data.name ?? "", github_username: q.data.github_username ?? "" });
   }, [q.data]);
 
+  const rawContributions = contribs.data?.items || [];
+  const contributions = useMemo(() => dedupeByIssue(rawContributions), [rawContributions]);
+  const timelineCounts = useMemo(() => computeContributionCounts(contributions), [contributions]);
+  const filteredContributions = useMemo(
+    () => contributions.filter((c) => activeStatus === "all" || c.status === activeStatus),
+    [contributions, activeStatus],
+  );
+
   const submit = async (e) => {
     e.preventDefault();
     const res = await save.mutate({
@@ -93,15 +101,7 @@ export function ProfileContent() {
     );
 
   const p = q.data;
-  const rawContributions = contribs.data?.items || [];
-  const contributions = dedupeByIssue(rawContributions);
-  const timelineCounts = computeContributionCounts(contributions);
   const mergedCount = p.merged_prs_count ?? 0;
-
-  const filteredContributions = useMemo(
-    () => contributions.filter((c) => activeStatus === "all" || c.status === activeStatus),
-    [contributions, activeStatus],
-  );
 
   return (
     <>
