@@ -11,7 +11,8 @@ from app.models import (
     User, UserRole,
     Repository, PlatformType,
     Issue, IssueDifficulty, IssueStatus,
-    Claim, ClaimStatus
+    Claim, ClaimStatus,
+    Contribution, ContributionStatus
 )
 
 
@@ -172,4 +173,68 @@ def test_repository_crud_endpoints(client_and_db):
     # 4. Verify deleted
     res = client.get("/issues/repositories")
     assert not any(r["id"] == repo_id for r in res.json())
+
+
+def test_claim_unclaim_reclaim_idempotency(client_and_db):
+    """
+    Verifies that:
+    1. Claiming an issue creates 1 contribution record.
+    2. Unclaiming sets the contribution status to 'released'.
+    3. The released contribution is excluded from /contributions/my.
+    4. Re-claiming the same issue reactivates the contribution record without creating a duplicate row.
+    """
+    client, db = client_and_db
+
+    # 1. Student 1 claims issue 1
+    res = client.post("/issues/1/claim", headers={"X-User-Id": "1"})
+    assert res.status_code == 201
+
+    # Check database: exactly 1 contribution for (user_id=1, issue_id=1)
+    contribs = db.query(Contribution).filter_by(user_id=1, issue_id=1).all()
+    assert len(contribs) == 1
+    assert contribs[0].status == ContributionStatus.CLAIMED
+
+    # Check /contributions/my: contains issue 1
+    res = client.get("/contributions/my", headers={"X-User-Id": "1"})
+    assert res.status_code == 200
+    timeline = res.json()
+    assert timeline["total_contributions"] == 1
+    assert timeline["items"][0]["issue_id"] == 1
+    assert timeline["items"][0]["status"] == "claimed"
+
+    # 2. Student 1 unclaims issue 1
+    res = client.post("/issues/1/unclaim", headers={"X-User-Id": "1"})
+    assert res.status_code == 200
+    assert res.json()["status"] == "released"
+
+    # In DB: contribution status is updated to RELEASED
+    db.expire_all()
+    contribs = db.query(Contribution).filter_by(user_id=1, issue_id=1).all()
+    assert len(contribs) == 1
+    assert contribs[0].status == ContributionStatus.RELEASED
+
+    # In /contributions/my: released records are excluded from active timeline
+    res = client.get("/contributions/my", headers={"X-User-Id": "1"})
+    assert res.status_code == 200
+    timeline = res.json()
+    assert timeline["total_contributions"] == 0
+    assert len(timeline["items"]) == 0
+
+    # 3. Student 1 re-claims issue 1
+    res = client.post("/issues/1/claim", headers={"X-User-Id": "1"})
+    assert res.status_code == 201
+
+    # In DB: still exactly 1 contribution record, reactivated to CLAIMED
+    db.expire_all()
+    contribs = db.query(Contribution).filter_by(user_id=1, issue_id=1).all()
+    assert len(contribs) == 1
+    assert contribs[0].status == ContributionStatus.CLAIMED
+
+    # In /contributions/my: timeline displays active claim again
+    res = client.get("/contributions/my", headers={"X-User-Id": "1"})
+    assert res.status_code == 200
+    timeline = res.json()
+    assert timeline["total_contributions"] == 1
+    assert timeline["items"][0]["issue_id"] == 1
+    assert timeline["items"][0]["status"] == "claimed"
 

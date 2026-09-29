@@ -17,7 +17,7 @@ Called:
 """
 import logging
 from typing import Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 
 import httpx
 from sqlalchemy import or_
@@ -120,7 +120,7 @@ def _upsert_repo(db: Session, repo_data: Dict[str, Any], old_name: Optional[str]
             name=name,
             github_repo_url=html_url,
             platform=platform,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
         )
         db.add(new_repo)
         db.commit()

@@ -330,6 +330,7 @@ def _handle_issues_event(payload: Dict[str, Any], repo: Optional[Repository], db
                             "title": "🎉 Issue Marked Completed",
                             "message": f"Issue '{issue.title}' was marked as completed on GitHub. Your claim and contribution have been completed!",
                             "issue_id": issue.id,
+                            "repo_id": issue.repo_id,
                         },
                         read=False,
                         created_at=now,
@@ -447,6 +448,7 @@ def _handle_pull_request_event(payload: Dict[str, Any], repo: Optional[Repositor
                     "message": f"Your PR '{pr.title}' has been linked to your contribution.",
                     "pr_id": pr.id,
                     "issue_id": linked_issue_id,
+                    "repo_id": pr.repo_id,
                 },
                 read=False,
                 created_at=now,
@@ -494,7 +496,8 @@ def _handle_pull_request_event(payload: Dict[str, Any], repo: Optional[Repositor
                         "title": "🎉 PR Merged!",
                         "message": f"Your PR '{pr.title}' was merged. Your contribution is validated!",
                         "pr_id": pr.id,
-                        "issue_id": linked_issue_id
+                        "issue_id": linked_issue_id,
+                        "repo_id": pr.repo_id,
                     },
                     read=False
                 ))
@@ -650,6 +653,8 @@ def _handle_pull_request_review_event(payload: Dict[str, Any], repo: Optional[Re
                 "title": f"Review on PR #{pr_data.get('number')}",
                 "message": f"Reviewer @{reviewer_login or 'maintainer'} submitted a review: {review_status.value.replace('_', ' ').title()}",
                 "pr_id": pr.id,
+                "issue_id": pr.issue_id,
+                "repo_id": pr.repo_id,
                 "status": review_status.value
             },
             read=False

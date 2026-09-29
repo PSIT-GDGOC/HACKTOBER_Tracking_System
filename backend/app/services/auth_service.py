@@ -392,7 +392,7 @@ def process_email_verification(db: Session, raw_token: str) -> User:
     """Consume a verification token and mark user's email as verified."""
     token_record, user = verify_email_token(db=db, raw_token=raw_token, expected_purpose="verify_email")
     user.is_email_verified = True
-    token_record.used_at = datetime.utcnow()
+    token_record.used_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(user)
     logger.info("Email verified successfully for user %s (id=%s).", user.email, user.id)
@@ -430,7 +430,7 @@ def reset_password_with_token(db: Session, raw_token: str, new_password: str) ->
     user.password_hash = hash_password(new_password)
     user.reset_otp_hash = None
     user.reset_otp_expires = None
-    token_record.used_at = datetime.utcnow()
+    token_record.used_at = datetime.now(timezone.utc)
 
     # Invalidate any other active reset tokens for this user
     other_tokens = (
@@ -443,7 +443,7 @@ def reset_password_with_token(db: Session, raw_token: str, new_password: str) ->
         .all()
     )
     for tok in other_tokens:
-        tok.used_at = datetime.utcnow()
+        tok.used_at = datetime.now(timezone.utc)
 
     db.commit()
     db.refresh(user)

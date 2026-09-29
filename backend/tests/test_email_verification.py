@@ -111,7 +111,7 @@ def test_token_hashing_and_creation(client_and_db):
     assert email_token.token_hash != raw_token
     assert email_token.purpose == TokenPurpose.VERIFY_EMAIL
     assert email_token.used_at is None
-    assert email_token.expires_at > datetime.utcnow()
+    assert email_token.expires_at > datetime.now(timezone.utc).replace(tzinfo=None)
     db.close()
 
 

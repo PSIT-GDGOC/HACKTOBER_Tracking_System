@@ -2,6 +2,7 @@
 from datetime import datetime
 from typing import List, Optional
 from pydantic import BaseModel, ConfigDict
+from app.schemas.base import AppBaseModel
 
 
 class SearchIssueResult(BaseModel):
@@ -51,7 +52,7 @@ class SearchRepoResult(BaseModel):
     platform: str
 
 
-class SearchCommitResult(BaseModel):
+class SearchCommitResult(AppBaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int

@@ -21,9 +21,11 @@ ALLOWED_TRANSITIONS: Dict[ContributionStatus, Set[ContributionStatus]] = {
     ContributionStatus.CLAIMED: {
         ContributionStatus.IN_PROGRESS,
         ContributionStatus.PR_SUBMITTED,
+        ContributionStatus.RELEASED,
     },
     ContributionStatus.IN_PROGRESS: {
         ContributionStatus.PR_SUBMITTED,
+        ContributionStatus.RELEASED,
     },
     ContributionStatus.PR_SUBMITTED: {
         ContributionStatus.UNDER_REVIEW,
@@ -44,6 +46,9 @@ ALLOWED_TRANSITIONS: Dict[ContributionStatus, Set[ContributionStatus]] = {
         ContributionStatus.MERGED,
     },
     ContributionStatus.MERGED: set(),  # Terminal state
+    ContributionStatus.RELEASED: {
+        ContributionStatus.CLAIMED,
+    },
 }
 
 
@@ -196,7 +201,7 @@ def get_user_contribution_timeline(db: Session, user_id: int) -> UserContributio
 
     contributions = (
         db.query(Contribution)
-        .filter(Contribution.user_id == user_id)
+        .filter(Contribution.user_id == user_id, Contribution.status != ContributionStatus.RELEASED)
         .order_by(Contribution.created_at.desc())
         .all()
     )
@@ -205,7 +210,7 @@ def get_user_contribution_timeline(db: Session, user_id: int) -> UserContributio
     total = len(items)
     valid_count = sum(1 for c in items if c.validation_status == ContributionValidation.VALID)
     merged_count = sum(1 for c in items if c.status == ContributionStatus.MERGED)
-    in_prog_count = sum(1 for c in items if c.status not in [ContributionStatus.MERGED])
+    in_prog_count = sum(1 for c in items if c.status not in [ContributionStatus.MERGED, ContributionStatus.RELEASED])
 
     user_brief = ClaimUserBrief(
         id=user.id,

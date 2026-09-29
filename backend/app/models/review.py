@@ -2,7 +2,7 @@ import enum
 from datetime import datetime
 from sqlalchemy import Column, Integer, Text, DateTime, ForeignKey, Enum, Index
 from sqlalchemy.orm import relationship
-from app.db import Base
+from app.db import Base, utc_now
 
 
 class ReviewStatus(str, enum.Enum):
@@ -24,7 +24,7 @@ class Review(Base):
         index=True
     )
     comment = Column(Text, nullable=True)
-    reviewed_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    reviewed_at = Column(DateTime, default=utc_now, nullable=False)
 
     # Relationships
     pull_request = relationship("PullRequest", back_populates="reviews")

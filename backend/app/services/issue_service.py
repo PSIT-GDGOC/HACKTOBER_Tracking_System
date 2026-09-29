@@ -522,21 +522,38 @@ def claim_issue(db: Session, issue_id: int, user_id: int) -> ClaimResponse:
     issue.status = IssueStatus.CLAIMED
     db.add(new_claim)
 
-    # 7. Create or update contribution lifecycle record
-    contribution = Contribution(
-        user_id=user.id,
-        issue_id=issue.id,
-        status=ContributionStatus.CLAIMED,
-        validation_status=ContributionValidation.PENDING,
-        timeline_json=[
-            {
-                "status": "claimed",
-                "timestamp": now.isoformat(),
-                "detail": f"Claimed issue #{issue.github_issue_id}: '{issue.title}'"
-            }
-        ]
+    # 7. Create or update contribution lifecycle record (idempotent upsert)
+    contribution = (
+        db.query(Contribution)
+        .filter(Contribution.user_id == user.id, Contribution.issue_id == issue.id)
+        .first()
     )
-    db.add(contribution)
+    if contribution:
+        contribution.status = ContributionStatus.CLAIMED
+        contribution.validation_status = ContributionValidation.PENDING
+        contribution.updated_at = now
+        timeline = list(contribution.timeline_json or [])
+        timeline.append({
+            "status": "claimed",
+            "timestamp": now.isoformat(),
+            "detail": f"Claimed issue #{issue.github_issue_id}: '{issue.title}'"
+        })
+        contribution.timeline_json = timeline
+    else:
+        contribution = Contribution(
+            user_id=user.id,
+            issue_id=issue.id,
+            status=ContributionStatus.CLAIMED,
+            validation_status=ContributionValidation.PENDING,
+            timeline_json=[
+                {
+                    "status": "claimed",
+                    "timestamp": now.isoformat(),
+                    "detail": f"Claimed issue #{issue.github_issue_id}: '{issue.title}'"
+                }
+            ]
+        )
+        db.add(contribution)
 
     # 8. Record in activity feed
     activity = ActivityFeed(
@@ -630,6 +647,8 @@ def unclaim_issue(db: Session, issue_id: int, user_id: int, user_role: UserRole 
         .first()
     )
     if contribution:
+        contribution.status = ContributionStatus.RELEASED
+        contribution.updated_at = now
         timeline = list(contribution.timeline_json or [])
         timeline.append({
             "status": "released",
@@ -656,6 +675,7 @@ def unclaim_issue(db: Session, issue_id: int, user_id: int, user_role: UserRole 
             "title": "Claim Released",
             "message": f"Your claim on issue #{issue.github_issue_id} '{issue.title}' was released.",
             "issue_id": issue.id,
+            "repo_id": issue.repo_id,
         },
         read=False,
         created_at=now,

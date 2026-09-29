@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 from sqlalchemy import Column, Integer, String, Text, DateTime, Enum, JSON, Index
-from app.db import Base
+from app.db import Base, utc_now
 
 
 class WebhookJobStatus(str, enum.Enum):
@@ -25,10 +25,10 @@ class WebhookJob(Base):
         index=True
     )
     attempts = Column(Integer, default=0, nullable=False)
-    next_attempt_at = Column(DateTime, default=datetime.utcnow, nullable=False, index=True)
+    next_attempt_at = Column(DateTime, default=utc_now, nullable=False, index=True)
     error_log = Column(Text, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, nullable=False)
+    created_at = Column(DateTime, default=utc_now, nullable=False)
+    updated_at = Column(DateTime, default=utc_now, onupdate=utc_now, nullable=False)
 
     __table_args__ = (
         Index("ix_webhook_jobs_status_next_attempt", "status", "next_attempt_at"),

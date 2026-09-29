@@ -2,7 +2,7 @@ import enum
 from datetime import datetime
 from sqlalchemy import Column, Integer, DateTime, ForeignKey, Enum, Index, text
 from sqlalchemy.orm import relationship
-from app.db import Base
+from app.db import Base, utc_now
 
 
 class ClaimStatus(str, enum.Enum):
@@ -18,7 +18,7 @@ class Claim(Base):
     id = Column(Integer, primary_key=True, index=True)
     issue_id = Column(Integer, ForeignKey("issues.id", ondelete="CASCADE"), nullable=False, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    claimed_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+    claimed_at = Column(DateTime, default=utc_now, nullable=False)
     status = Column(
         Enum(ClaimStatus, values_callable=lambda x: [e.value for e in x], name="claimstatus"),
         default=ClaimStatus.ACTIVE,

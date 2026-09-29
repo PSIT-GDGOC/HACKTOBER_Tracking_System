@@ -2,10 +2,16 @@ import asyncio
 import logging
 from contextlib import asynccontextmanager
 
+from datetime import datetime
 from fastapi import FastAPI
+from fastapi.encoders import ENCODERS_BY_TYPE
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.logging_config import configure_logging
+from app.schemas.base import serialize_utc_datetime
+
+# Ensure all datetime encodings via jsonable_encoder serialize with UTC 'Z' suffix
+ENCODERS_BY_TYPE[datetime] = serialize_utc_datetime
 
 # Apply sensitive-data log filter globally before anything else can log
 configure_logging()
@@ -57,6 +63,8 @@ async def lifespan(app: FastAPI):
                 conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_otp_hash VARCHAR(255);"))
                 conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_otp_expires TIMESTAMP;"))
                 conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_email_verified BOOLEAN NOT NULL DEFAULT FALSE;"))
+                conn.execute(text("ALTER TYPE contributionstatus ADD VALUE IF NOT EXISTS 'released';"))
+                conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_contributions_user_issue ON contributions (user_id, issue_id);"))
                 conn.execute(text("""
                     CREATE TABLE IF NOT EXISTS email_tokens (
                         id SERIAL PRIMARY KEY,

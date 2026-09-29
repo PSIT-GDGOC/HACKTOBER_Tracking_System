@@ -325,9 +325,11 @@ def test_get_notifications_unread_first(client_and_db):
     # First item must be the unread one
     assert data["items"][0]["read"] is False
     assert data["items"][0]["type"] == "pr_merged"
+    assert data["items"][0]["pr_id"] == 1
     # Second item is the read one
     assert data["items"][1]["read"] is True
     assert data["items"][1]["type"] == "claim_created"
+    assert data["items"][1]["issue_id"] == 1
 
     # Filter unread only
     res_unread = client.get("/notifications?unread_only=true")

@@ -7970,7 +7970,8 @@
           "under_review",
           "changes_requested",
           "accepted",
-          "merged"
+          "merged",
+          "released"
         ],
         "title": "ContributionStatus"
       },
@@ -8749,6 +8750,39 @@
             "type": "string",
             "format": "date-time",
             "title": "Created At"
+          },
+          "repo_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repo Id"
+          },
+          "issue_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Issue Id"
+          },
+          "pr_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pr Id"
           }
         },
         "type": "object",
