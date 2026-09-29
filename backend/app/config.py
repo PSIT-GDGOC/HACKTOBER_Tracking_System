@@ -6,8 +6,8 @@ class Settings(BaseSettings):
     ENV: str = "development"
     DEBUG: bool = False  # Default False; only True in local dev via .env
 
-    # Database — supports Supabase's postgres:// and standard postgresql:// URLs
-    DATABASE_URL: str = "postgresql://postgres.mxxejrteunvdmttgkdoq:i51ZNBGa5aOVDKYP@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres"
+    # Database — Neon PostgreSQL
+    DATABASE_URL: str = "postgresql://neondb_owner:npg_B9MbHqGiwd3e@ep-falling-flower-b54gens1.c-7.us-east-2.aws.neon.tech/neondb?sslmode=require"
 
     # Security & Auth
     SECRET_KEY: str = "9f83b2a8d4e5c6b7a8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1"
