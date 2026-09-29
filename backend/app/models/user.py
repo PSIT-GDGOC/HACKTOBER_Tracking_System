@@ -1,6 +1,6 @@
 import enum
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum, JSON, Index, text
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, Enum, JSON, Index, text, Text
 from sqlalchemy.ext.hybrid import hybrid_property
 from sqlalchemy.orm import relationship
 from app.db import Base
@@ -56,7 +56,7 @@ class User(Base):
     github_username = Column(String(100), unique=True, index=True, nullable=True)
     github_id = Column(String(100), unique=True, nullable=True)
     password_hash = Column(String(255), nullable=True)
-    reset_otp_hash = Column(String(255), nullable=True)
+    reset_otp_hash = Column(Text, nullable=True)
     reset_otp_expires = Column(DateTime, nullable=True)
     role = Column(
         Enum(UserRole, values_callable=lambda x: [e.value for e in x], name="userrole"),
