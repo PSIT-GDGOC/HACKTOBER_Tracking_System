@@ -1,7 +1,7 @@
 """Pydantic schemas for Auth & Verification Module."""
 from datetime import datetime
 from typing import Optional, Dict, Any, List
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, EmailStr, field_validator
 import re
 
 from app.models.user import UserRole, VerificationMethod
@@ -57,20 +57,42 @@ class SetPasswordResponse(BaseModel):
     message: str = "Password set successfully."
 
 
+class SendVerificationRequest(BaseModel):
+    email: Optional[EmailStr] = Field(None, description="Email to send verification link to (if unauthenticated)")
+
+
+class SendVerificationResponse(BaseModel):
+    success: bool = True
+    message: str = "Verification email sent. Please check your inbox."
+
+
+class VerifyEmailRequest(BaseModel):
+    token: str = Field(..., min_length=10, description="Verification token from the link")
+
+
+class VerifyEmailResponse(BaseModel):
+    success: bool = True
+    message: str = "Email verified successfully."
+    is_email_verified: bool = True
+
+
 class ForgotPasswordRequest(BaseModel):
-    identifier: str = Field(..., description="PSIT roll number or email address")
+    email: Optional[str] = Field(None, description="Registered email address or PSIT roll number")
+    identifier: Optional[str] = Field(None, description="PSIT roll number or email address")
 
 
 class ForgotPasswordResponse(BaseModel):
     success: bool = True
-    message: str
-    email: str
+    message: str = "If an account with that email exists, password reset instructions have been sent."
+    email: Optional[str] = None
 
 
 class ResetPasswordRequest(BaseModel):
-    identifier: str = Field(..., description="PSIT roll number or email address")
-    otp: str = Field(..., min_length=6, max_length=6, description="6-digit OTP code received via email")
+    token: Optional[str] = Field(None, description="Password reset token from email link")
     new_password: str = Field(..., min_length=8, max_length=128, description="New strong password")
+    # Legacy OTP parameters for backwards compatibility
+    identifier: Optional[str] = Field(None, description="PSIT roll number or email address (legacy OTP)")
+    otp: Optional[str] = Field(None, min_length=6, max_length=6, description="6-digit OTP code (legacy OTP)")
 
 
 class ResetPasswordResponse(BaseModel):

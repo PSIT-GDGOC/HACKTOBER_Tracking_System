@@ -1171,3 +1171,420 @@ export function GitHubOAuthCallback() {
     </div>
   );
 }
+
+/* ------------------------------------------------------------------ */
+/*  Email Verification Component                                       */
+/* ------------------------------------------------------------------ */
+
+function extractTokenFromUrl(location) {
+  const routerParams = new URLSearchParams(location.search);
+  const hashPart = window.location.hash.includes("?") ? window.location.hash.split("?")[1] : "";
+  const hashParams = new URLSearchParams(hashPart);
+  const searchParams = new URLSearchParams(window.location.search);
+  return routerParams.get("token") || hashParams.get("token") || searchParams.get("token") || "";
+}
+
+export function VerifyEmail() {
+  const nav = useNavigate();
+  const location = useLocation();
+  const token = extractTokenFromUrl(location);
+
+  const [status, setStatus] = useState(token ? "verifying" : "request"); // verifying | success | error | request
+  const [message, setMessage] = useState("");
+  const [emailInput, setEmailInput] = useState("");
+  const [requestPending, setRequestPending] = useState(false);
+  const [requestSent, setRequestSent] = useState(false);
+  const [requestError, setRequestError] = useState(null);
+  const processedRef = useRef(false);
+
+  useEffect(() => {
+    if (!token) {
+      setStatus("request");
+      return;
+    }
+    if (processedRef.current) return;
+    processedRef.current = true;
+
+    async function doVerify() {
+      try {
+        const res = await api.verifyEmail({ token });
+        setStatus("success");
+        setMessage(res.message || "Email verified successfully!");
+      } catch (err) {
+        setStatus("error");
+        setMessage(err?.detail || err?.message || "Invalid or expired verification token.");
+      }
+    }
+
+    doVerify();
+  }, [token]);
+
+  const handleRequestVerification = async (e) => {
+    e.preventDefault();
+    if (!emailInput.trim()) {
+      setRequestError("Please enter your registered email address.");
+      return;
+    }
+    setRequestError(null);
+    setRequestPending(true);
+    try {
+      const res = await api.sendVerification({ email: emailInput.trim() });
+      setRequestSent(true);
+      setMessage(res.message || "If the account exists, a verification link has been sent.");
+    } catch (err) {
+      setRequestError(err?.detail || err?.message || "Failed to send verification email.");
+    } finally {
+      setRequestPending(false);
+    }
+  };
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-paper grid-paper px-4 py-10">
+      <div className="w-full max-w-md">
+        <Panel className="p-7 text-center">
+          <div className="flex justify-center">
+            <GdgMark size={44} />
+          </div>
+
+          <h1 className="mt-5 font-display text-2xl font-extrabold uppercase tracking-tight">
+            Email Verification
+          </h1>
+
+          {status === "verifying" && (
+            <div className="mt-6 flex flex-col items-center gap-3">
+              <span className="h-8 w-8 animate-spin rounded-full border-4 border-ink border-t-transparent" />
+              <p className="font-mono text-xs uppercase tracking-wider text-ink-soft">
+                Verifying your email address…
+              </p>
+            </div>
+          )}
+
+          {status === "success" && (
+            <div className="mt-6 space-y-4">
+              <div className="border-[3px] border-ink bg-ggreen-light p-4 shadow-[4px_4px_0_0_#101010] text-left">
+                <Badge tone="green" dot>Verified</Badge>
+                <p className="mt-2 font-display text-base font-bold text-ink">{message}</p>
+                <p className="mt-1 font-mono text-xs text-ink-soft">
+                  Your email address is now confirmed. You can log into your account and participate in Hacktoberfest.
+                </p>
+              </div>
+              <Button variant="green" size="md" className="w-full" onClick={() => nav("/login")}>
+                Proceed to Login →
+              </Button>
+            </div>
+          )}
+
+          {status === "error" && (
+            <div className="mt-6 space-y-4 text-left">
+              <div className="border-[3px] border-ink bg-gred-light p-4 shadow-[4px_4px_0_0_#101010]">
+                <Badge tone="red">Verification Failed</Badge>
+                <p className="mt-2 font-mono text-xs text-ink">{message}</p>
+                <p className="mt-1 font-mono text-[11px] text-ink-soft">
+                  The link may have expired (valid for 30 minutes) or has already been used.
+                </p>
+              </div>
+
+              <div className="border-[2px] border-ink bg-white p-4">
+                <p className="font-display text-sm font-bold uppercase">Request New Link</p>
+                <p className="mt-1 text-xs text-ink-soft">
+                  Enter your email address to receive a fresh verification link:
+                </p>
+
+                {requestSent ? (
+                  <div className="mt-3 border-[2px] border-ink bg-ggreen-light p-2 text-xs font-mono font-bold text-ink">
+                    ✓ Check your inbox for the new link!
+                  </div>
+                ) : (
+                  <form onSubmit={handleRequestVerification} className="mt-3 space-y-3">
+                    <Input
+                      type="email"
+                      value={emailInput}
+                      onChange={(e) => setEmailInput(e.target.value)}
+                      placeholder="student@psit.ac.in"
+                      className="font-mono text-xs"
+                    />
+                    {requestError && (
+                      <p className="font-mono text-xs font-bold text-gred">▲ {requestError}</p>
+                    )}
+                    <Button type="submit" variant="yellow" size="sm" loading={requestPending} className="w-full">
+                      Send Verification Email →
+                    </Button>
+                  </form>
+                )}
+              </div>
+
+              <Link to="/login" className="block text-center font-mono text-xs font-bold uppercase underline">
+                ← Back to Login
+              </Link>
+            </div>
+          )}
+
+          {status === "request" && (
+            <div className="mt-6 space-y-4 text-left">
+              <p className="text-sm text-ink-soft">
+                Enter your registered account email address to receive an email verification link.
+              </p>
+
+              {requestSent ? (
+                <div className="border-[3px] border-ink bg-ggreen-light p-4 shadow-[4px_4px_0_0_#101010]">
+                  <Badge tone="green" dot>Email Sent</Badge>
+                  <p className="mt-2 font-display text-sm font-bold text-ink">{message}</p>
+                  <p className="mt-1 font-mono text-xs text-ink-soft">
+                    Check your inbox and click the verification link within 30 minutes.
+                  </p>
+                  <Link to="/login" className="mt-4 block">
+                    <Button variant="paper" size="sm" className="w-full">
+                      Return to Login
+                    </Button>
+                  </Link>
+                </div>
+              ) : (
+                <form onSubmit={handleRequestVerification} className="space-y-4">
+                  <Field label="Email address">
+                    <Input
+                      type="email"
+                      value={emailInput}
+                      onChange={(e) => setEmailInput(e.target.value)}
+                      placeholder="student@psit.ac.in"
+                      className="font-mono"
+                      autoFocus
+                    />
+                  </Field>
+
+                  {requestError && (
+                    <p className="font-mono text-xs font-bold text-gred">▲ {requestError}</p>
+                  )}
+
+                  <Button type="submit" variant="blue" size="lg" loading={requestPending} className="w-full">
+                    Send Verification Email →
+                  </Button>
+
+                  <Link to="/login" className="block text-center font-mono text-xs font-bold uppercase underline text-ink-soft hover:text-ink">
+                    ← Back to Login
+                  </Link>
+                </form>
+              )}
+            </div>
+          )}
+        </Panel>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/*  Reset Password Component                                           */
+/* ------------------------------------------------------------------ */
+
+export function ResetPassword() {
+  const nav = useNavigate();
+  const location = useLocation();
+  const token = extractTokenFromUrl(location);
+
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
+  const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(false);
+  const [pending, setPending] = useState(false);
+
+  // Fallback mode if no token in URL: request reset link
+  const [emailInput, setEmailInput] = useState("");
+  const [linkSent, setLinkSent] = useState(false);
+  const [linkSentMsg, setLinkSentMsg] = useState("");
+  const [linkPending, setLinkPending] = useState(false);
+  const [linkError, setLinkError] = useState(null);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError(null);
+
+    if (newPassword.length < 8) {
+      setError("Password must be at least 8 characters long.");
+      return;
+    }
+    const hasLetter = /[a-zA-Z]/.test(newPassword);
+    const hasNonLetter = /[^a-zA-Z]/.test(newPassword);
+    if (!hasLetter || !hasNonLetter) {
+      setError("Password must include at least one letter and one number or symbol.");
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setError("Passwords do not match.");
+      return;
+    }
+
+    setPending(true);
+    try {
+      await api.resetPassword({
+        token,
+        new_password: newPassword,
+      });
+      setSuccess(true);
+    } catch (err) {
+      setError(err?.detail || err?.message || "Failed to reset password. Link may be expired.");
+    } finally {
+      setPending(false);
+    }
+  };
+
+  const handleSendResetLink = async (e) => {
+    e.preventDefault();
+    const clean = emailInput.trim();
+    if (!clean) {
+      setLinkError("Please enter your roll number or email address.");
+      return;
+    }
+    setLinkError(null);
+    setLinkPending(true);
+    try {
+      const res = await api.forgotPassword({ identifier: clean, email: clean });
+      setLinkSentMsg(res.message || "Password reset instructions have been sent.");
+      setLinkSent(true);
+    } catch (err) {
+      setLinkError(err?.detail || err?.message || "Failed to send reset link.");
+    } finally {
+      setLinkPending(false);
+    }
+  };
+
+  return (
+    <div className="flex min-h-screen items-center justify-center bg-paper grid-paper px-4 py-10">
+      <div className="w-full max-w-md">
+        <Panel className="p-7">
+          <div className="flex items-center gap-3">
+            <GdgMark size={40} />
+            <div>
+              <p className="font-display text-2xl font-extrabold leading-none">
+                <span className="text-gblue">G</span><span className="text-gred">D</span><span className="text-gyellow">G</span>
+              </p>
+              <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-ink-soft">Hacktoberfest · PSIT</p>
+            </div>
+          </div>
+
+          <h1 className="mt-6 font-display text-3xl font-extrabold uppercase leading-none tracking-tight">
+            Reset Password
+          </h1>
+
+          {token ? (
+            /* Reset with Token flow */
+            success ? (
+              <div className="mt-6 space-y-4">
+                <div className="border-[3px] border-ink bg-ggreen-light p-4 shadow-[4px_4px_0_0_#101010]">
+                  <Badge tone="green" dot>Success</Badge>
+                  <p className="mt-2 font-display text-base font-bold text-ink">
+                    Password Reset Complete
+                  </p>
+                  <p className="mt-1 font-mono text-xs text-ink-soft">
+                    Your password has been updated successfully. You can now log in using your new credentials.
+                  </p>
+                </div>
+                <Button variant="green" size="lg" className="w-full" onClick={() => nav("/login")}>
+                  Log in Now →
+                </Button>
+              </div>
+            ) : (
+              <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+                <p className="text-sm text-ink-soft">
+                  Enter your new password below. It must be at least 8 characters with letters and numbers.
+                </p>
+
+                <Field label="New Password">
+                  <div className="relative">
+                    <Input
+                      type={showPassword ? "text" : "password"}
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="••••••••"
+                      className="font-mono pr-14"
+                      autoFocus
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] font-mono font-bold uppercase text-ink-soft hover:text-ink"
+                    >
+                      {showPassword ? "Hide" : "Show"}
+                    </button>
+                  </div>
+                </Field>
+
+                <Field label="Confirm New Password">
+                  <Input
+                    type={showPassword ? "text" : "password"}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="••••••••"
+                    className="font-mono"
+                  />
+                </Field>
+
+                {error && <p className="font-mono text-xs font-bold text-gred">▲ {error}</p>}
+
+                <Button type="submit" variant="blue" size="lg" loading={pending} className="w-full">
+                  Update Password →
+                </Button>
+
+                <p className="text-center">
+                  <Link to="/login" className="font-mono text-xs font-bold uppercase underline text-ink-soft hover:text-ink">
+                    ← Back to Login
+                  </Link>
+                </p>
+              </form>
+            )
+          ) : (
+            /* No Token: request a reset link */
+            <div className="mt-6 space-y-4">
+              <p className="text-sm text-ink-soft">
+                Enter your registered PSIT roll number or email address to receive password reset instructions.
+              </p>
+
+              {linkSent ? (
+                <div className="border-[3px] border-ink bg-gyellow-light p-4 shadow-[4px_4px_0_0_#101010]">
+                  <Badge tone="yellow" dot>Check Your Email</Badge>
+                  <p className="mt-2 text-xs font-mono font-bold text-ink">
+                    {linkSentMsg}
+                  </p>
+                  <p className="mt-1 font-mono text-[11px] text-ink-soft">
+                    Please check your inbox (and spam folder). The link expires in 30 minutes.
+                  </p>
+                  <Link to="/login" className="mt-4 block">
+                    <Button variant="paper" size="sm" className="w-full">
+                      Return to Login
+                    </Button>
+                  </Link>
+                </div>
+              ) : (
+                <form onSubmit={handleSendResetLink} className="space-y-4">
+                  <Field label="Roll Number or Email Address">
+                    <Input
+                      type="text"
+                      value={emailInput}
+                      onChange={(e) => setEmailInput(e.target.value)}
+                      placeholder="2200320100001 or student@gmail.com"
+                      className="font-mono"
+                      autoFocus
+                    />
+                  </Field>
+
+                  {linkError && <p className="font-mono text-xs font-bold text-gred">▲ {linkError}</p>}
+
+                  <Button type="submit" variant="yellow" size="lg" loading={linkPending} className="w-full">
+                    Send Reset Instructions →
+                  </Button>
+
+                  <p className="text-center">
+                    <Link to="/login" className="font-mono text-xs font-bold uppercase underline text-ink-soft hover:text-ink">
+                      ← Back to Login
+                    </Link>
+                  </p>
+                </form>
+              )}
+            </div>
+          )}
+        </Panel>
+      </div>
+    </div>
+  );
+}
+

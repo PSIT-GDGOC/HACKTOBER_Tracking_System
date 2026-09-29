@@ -35,7 +35,7 @@ from PIL import Image
 from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.models import User, UserRole, VerificationMethod
+from app.models import User, UserRole, VerificationMethod, EmailToken
 from app.services.qr_service import decode_qr_from_image, validate_psit_qr_token
 from app.services.psit_portal_service import fetch_psit_student_data
 from app.services.storage_service import save_id_card_image, get_id_card_image
@@ -287,6 +287,189 @@ def reset_password_with_otp(db: Session, identifier: str, otp: str, new_password
     return user
 
 
+# =====================================================================
+# Email Verification & Password Reset Token Helpers (Resend)
+# =====================================================================
+
+def hash_token(raw_token: str) -> str:
+    """Compute SHA-256 hex digest of raw token. Raw tokens are never persisted in DB."""
+    return hashlib.sha256(raw_token.strip().encode("utf-8")).hexdigest()
+
+
+def create_email_token(db: Session, user: User, purpose: str, expire_minutes: int) -> str:
+    """Generate a cryptographic 32-byte urlsafe token and store its SHA-256 hash in email_tokens."""
+    now = datetime.now(timezone.utc)
+    
+    # Invalidate previous unconsumed tokens of the same purpose for this user
+    prior_tokens = (
+        db.query(EmailToken)
+        .filter(
+            EmailToken.user_id == user.id,
+            EmailToken.purpose == purpose,
+            EmailToken.used_at.is_(None),
+        )
+        .all()
+    )
+    for tok in prior_tokens:
+        tok.used_at = now
+
+    raw_token = secrets.token_urlsafe(32)
+    token_digest = hash_token(raw_token)
+    expires_at = now + timedelta(minutes=expire_minutes)
+
+    # Strip tzinfo for SQLite/PostgreSQL compatibility
+    expires_at_naive = expires_at.replace(tzinfo=None)
+
+    token_record = EmailToken(
+        user_id=user.id,
+        token_hash=token_digest,
+        purpose=purpose,
+        expires_at=expires_at_naive,
+        used_at=None,
+    )
+    db.add(token_record)
+    db.commit()
+    db.refresh(token_record)
+    return raw_token
+
+
+def verify_email_token(db: Session, raw_token: str, expected_purpose: str) -> Tuple[EmailToken, User]:
+    """Validate a raw token against email_tokens table.
+
+    Checks:
+    - Token exists
+    - Single-use: used_at is None
+    - Not expired: expires_at > now
+    - Purpose matches: purpose == expected_purpose
+    - Associated user exists
+    """
+    token_digest = hash_token(raw_token)
+    token_record = (
+        db.query(EmailToken)
+        .filter(EmailToken.token_hash == token_digest)
+        .first()
+    )
+    if not token_record:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or unrecognized verification token.",
+        )
+
+    if token_record.used_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This token has already been used. Please request a new link.",
+        )
+
+    now_utc = datetime.now(timezone.utc)
+    exp = token_record.expires_at
+    if exp.tzinfo is None:
+        exp = exp.replace(tzinfo=timezone.utc)
+
+    if now_utc > exp:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This token has expired. Please request a new link.",
+        )
+
+    if token_record.purpose != expected_purpose:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid token purpose for this action.",
+        )
+
+    user = db.query(User).filter(User.id == token_record.user_id).first()
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User account associated with this token was not found.",
+        )
+
+    return token_record, user
+
+
+def process_email_verification(db: Session, raw_token: str) -> User:
+    """Consume a verification token and mark user's email as verified."""
+    token_record, user = verify_email_token(db=db, raw_token=raw_token, expected_purpose="verify_email")
+    user.is_email_verified = True
+    token_record.used_at = datetime.utcnow()
+    db.commit()
+    db.refresh(user)
+    logger.info("Email verified successfully for user %s (id=%s).", user.email, user.id)
+    return user
+
+
+def request_password_reset_token(db: Session, email_or_identifier: str) -> Optional[Tuple[User, str]]:
+    """Look up user by email or roll number and create a reset token.
+
+    Returns (user, raw_token) if user exists, else None.
+    """
+    clean = email_or_identifier.strip().lower()
+    user = (
+        db.query(User)
+        .filter((User.email.ilike(clean)) | (User.psit_roll_no.ilike(clean)))
+        .first()
+    )
+    if not user:
+        return None
+
+    raw_token = create_email_token(
+        db=db,
+        user=user,
+        purpose="reset_password",
+        expire_minutes=settings.RESET_TOKEN_EXPIRE_MINUTES,
+    )
+    return user, raw_token
+
+
+def reset_password_with_token(db: Session, raw_token: str, new_password: str) -> User:
+    """Verify reset token, validate password strength, hash using PBKDF2, and update user password."""
+    token_record, user = verify_email_token(db=db, raw_token=raw_token, expected_purpose="reset_password")
+    validate_password_strength(new_password)
+
+    user.password_hash = hash_password(new_password)
+    user.reset_otp_hash = None
+    user.reset_otp_expires = None
+    token_record.used_at = datetime.utcnow()
+
+    # Invalidate any other active reset tokens for this user
+    other_tokens = (
+        db.query(EmailToken)
+        .filter(
+            EmailToken.user_id == user.id,
+            EmailToken.purpose == "reset_password",
+            EmailToken.used_at.is_(None),
+        )
+        .all()
+    )
+    for tok in other_tokens:
+        tok.used_at = datetime.utcnow()
+
+    db.commit()
+    db.refresh(user)
+    logger.info("Password successfully reset via token for user %s (id=%s).", user.email, user.id)
+    return user
+
+
+def request_email_verification_token(db: Session, email: str) -> Optional[Tuple[User, str]]:
+    """Look up user by email and create a verification token.
+
+    Returns (user, raw_token) if user exists, else None.
+    """
+    clean_email = email.strip().lower()
+    user = db.query(User).filter(User.email.ilike(clean_email)).first()
+    if not user:
+        return None
+
+    raw_token = create_email_token(
+        db=db,
+        user=user,
+        purpose="verify_email",
+        expire_minutes=settings.VERIFY_TOKEN_EXPIRE_MINUTES,
+    )
+    return user, raw_token
+
+
 def authenticate_user(db: Session, identifier: str, password: Optional[str] = None) -> User:
     """Find user by roll number or email and verify password if set."""
     clean_id = identifier.strip()
@@ -301,6 +484,13 @@ def authenticate_user(db: Session, identifier: str, password: Optional[str] = No
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"No account found matching identifier '{identifier}'."
+        )
+
+    # If email verification is required by config, enforce it before login
+    if settings.REQUIRE_EMAIL_VERIFICATION and not user.is_email_verified:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Email verification required. Please verify your email before logging in."
         )
 
     # If the user has a password configured, strictly verify it

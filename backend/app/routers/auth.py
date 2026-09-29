@@ -12,10 +12,12 @@ Endpoints:
 - POST /auth/github/link         — Manually link a GitHub username (fallback / dev use)
 """
 import base64
+import secrets
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
 import httpx
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status, BackgroundTasks, Header
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -33,11 +35,15 @@ from app.schemas.auth import (
     ManualReviewItemResponse,
     ResetPasswordRequest,
     ResetPasswordResponse,
+    SendVerificationRequest,
+    SendVerificationResponse,
     SetPasswordRequest,
     SetPasswordResponse,
     SignupRequest,
     SignupResponse,
     TokenResponse,
+    VerifyEmailRequest,
+    VerifyEmailResponse,
     VerifyIDCardRequest,
     VerifyIDCardResponse,
 )
@@ -48,14 +54,25 @@ from app.services.auth_service import (
     exchange_github_oauth_code,
     link_github_account,
     list_pending_verifications,
+    process_email_verification,
     process_id_card_verification,
     register_student,
+    create_email_token,
+    hash_password,
+    request_email_verification_token,
     request_password_reset_otp,
+    request_password_reset_token,
     reset_password_with_otp,
+    reset_password_with_token,
     review_manual_verification,
     set_user_password,
 )
 from app.services.storage_service import get_id_card_image
+from app.services.email_service import (
+    check_email_rate_limit,
+    send_verification_email,
+    send_password_reset_email,
+)
 
 router = APIRouter(prefix="/auth", tags=["Auth & Verification"])
 
@@ -136,42 +153,228 @@ def set_password(
     )
 
 
-@router.post("/forgot-password", response_model=ForgotPasswordResponse, summary="Request 6-digit password reset OTP via email")
-def forgot_password(
-    payload: ForgotPasswordRequest,
+# ──────────────────────────────────────────────────────────────────────
+# Email Verification Endpoints (Resend)
+# ──────────────────────────────────────────────────────────────────────
+
+@router.post(
+    "/send-verification",
+    response_model=SendVerificationResponse,
+    summary="Send email verification link via Resend",
+)
+def send_verification(
+    background_tasks: BackgroundTasks,
+    payload: Optional[SendVerificationRequest] = None,
     db: Session = Depends(get_db),
+    authorization: Optional[str] = Header(None, alias="Authorization"),
 ):
     """
-    Send a 6-digit password reset OTP code to the registered student's email address.
-    Code is valid for 15 minutes.
+    Send an email verification link using Resend.
+    Can be invoked by an authenticated student (uses account email),
+    or unauthenticated by supplying an email address in the payload.
+    Enforces per-email cooldown (1/60s, max 5/hr).
     """
-    user, _ = request_password_reset_otp(db=db, identifier=payload.identifier)
-    parts = user.email.split("@")
-    masked_email = parts[0][0] + "***" + parts[0][-1] + "@" + parts[1] if len(parts[0]) > 2 else user.email
-    return ForgotPasswordResponse(
+    target_email = None
+    target_name = "there"
+
+    if authorization and authorization.lower().startswith("bearer "):
+        try:
+            current_user = get_current_user(authorization=authorization, db=db)
+            target_email = current_user.email
+            target_name = current_user.name
+        except Exception:
+            pass
+
+    if not target_email and payload and payload.email:
+        target_email = str(payload.email).strip().lower()
+
+    if not target_email:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Please provide an email address or log in to request verification.",
+        )
+
+    # Cooldown & rate limiting
+    check_email_rate_limit(target_email)
+
+    token_result = request_email_verification_token(db=db, email=target_email)
+    if token_result:
+        user, raw_token = token_result
+        target_name = user.name
+        background_tasks.add_task(
+            send_verification_email,
+            to_email=user.email,
+            name=target_name,
+            token=raw_token,
+        )
+
+    return SendVerificationResponse(
         success=True,
-        message=f"Verification code has been sent to your registered email ({masked_email}). Please check your inbox.",
-        email=masked_email,
+        message="If an account with that email exists, a verification link has been sent to your inbox.",
     )
 
 
-@router.post("/reset-password", response_model=ResetPasswordResponse, summary="Reset password using email OTP")
+@router.post(
+    "/verify-email",
+    response_model=VerifyEmailResponse,
+    summary="Verify email address using token",
+)
+def verify_email(
+    payload: VerifyEmailRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Accepts single-use verification token, validates expiry and purpose,
+    and marks user's email as verified.
+    """
+    process_email_verification(db=db, raw_token=payload.token)
+    return VerifyEmailResponse(
+        success=True,
+        message="Email verified successfully. You may now continue to your dashboard.",
+    )
+
+
+# ──────────────────────────────────────────────────────────────────────
+# Password Reset Endpoints (Token-based Resend + Legacy OTP)
+# ──────────────────────────────────────────────────────────────────────
+
+@router.post("/forgot-password", response_model=ForgotPasswordResponse, summary="Request password reset via email or roll number")
+def forgot_password(
+    payload: ForgotPasswordRequest,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """
+    Send a password reset link and OTP to the registered student's email address.
+    
+    Accepts either roll number or email:
+    - If the input consists entirely of numbers (digits) -> treated as Roll Number.
+      The system looks up the student by roll number, fetches their registered email
+      from the database, generates a 6-digit OTP + reset token, and dispatches the email.
+    - If the input contains '@' (e.g. ends with @gmail.com or @psit.ac.in) -> treated as Email.
+    """
+    raw_input = (payload.identifier or payload.email or "").strip()
+    if not raw_input:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Please provide your registered roll number or email address.",
+        )
+
+    # Detect if user entered a numeric roll number or an email address
+    is_numeric_roll = raw_input.isdigit()
+    is_email = "@" in raw_input or raw_input.lower().endswith("@gmail.com")
+
+    target_user = None
+
+    if is_numeric_roll:
+        # Numeric roll number: look up student in DB to fetch their registered email
+        target_user = db.query(User).filter(User.psit_roll_no.ilike(raw_input)).first()
+    elif is_email:
+        clean_email = raw_input.lower()
+        target_user = db.query(User).filter(User.email.ilike(clean_email)).first()
+    else:
+        # Fallback (alphanumeric roll number or identifier)
+        target_user = db.query(User).filter(
+            (User.psit_roll_no.ilike(raw_input)) | (User.email.ilike(raw_input))
+        ).first()
+
+    if target_user and target_user.email:
+        # Enforce rate limiting on the recipient email
+        check_email_rate_limit(target_user.email)
+
+        # Generate 6-digit OTP code for instant verification
+        otp_num = secrets.randbelow(900_000) + 100_000
+        otp_code = str(otp_num)
+        target_user.reset_otp_hash = hash_password(otp_code)
+        target_user.reset_otp_expires = datetime.now(timezone.utc) + timedelta(minutes=15)
+        db.commit()
+        db.refresh(target_user)
+
+        # Generate Resend token for 1-click email link
+        raw_token = create_email_token(
+            db=db,
+            user=target_user,
+            purpose="reset_password",
+            expire_minutes=settings.RESET_TOKEN_EXPIRE_MINUTES,
+        )
+
+        # Dispatch reset email in background containing BOTH the reset link and OTP
+        background_tasks.add_task(
+            send_password_reset_email,
+            to_email=target_user.email,
+            name=target_user.name,
+            token=raw_token,
+            otp_code=otp_code,
+        )
+
+        # Compute masked email (e.g. a***a@gmail.com) for user privacy
+        parts = target_user.email.split("@")
+        masked_email = parts[0][0] + "***" + parts[0][-1] + "@" + parts[1] if len(parts[0]) > 2 else target_user.email
+
+        if is_numeric_roll:
+            return ForgotPasswordResponse(
+                success=True,
+                message=f"Verification code has been sent to your registered email ({masked_email}). Please check your inbox.",
+                email=masked_email,
+            )
+        else:
+            return ForgotPasswordResponse(
+                success=True,
+                message="If an account with that email exists, password reset instructions have been sent.",
+                email=target_user.email,
+            )
+
+    # If no account found, return generic message to prevent account enumeration
+    if is_numeric_roll:
+        return ForgotPasswordResponse(
+            success=True,
+            message="If an account with that roll number exists, password reset instructions have been sent.",
+            email=None,
+        )
+    else:
+        return ForgotPasswordResponse(
+            success=True,
+            message="If an account with that email exists, password reset instructions have been sent.",
+            email=raw_input if is_email else None,
+        )
+
+
+@router.post("/reset-password", response_model=ResetPasswordResponse, summary="Reset password using token or OTP")
 def reset_password(
     payload: ResetPasswordRequest,
     db: Session = Depends(get_db),
 ):
     """
-    Verify the 6-digit OTP code and set a new account password in the database.
+    Reset password using single-use token from email link, or using 6-digit OTP.
     """
-    reset_password_with_otp(
-        db=db,
-        identifier=payload.identifier,
-        otp=payload.otp,
-        new_password=payload.new_password,
-    )
-    return ResetPasswordResponse(
-        success=True,
-        message="Your password has been changed successfully in the database. You can now log in with your new password.",
+    # 1. Token-based reset (Resend email link flow)
+    if payload.token:
+        reset_password_with_token(
+            db=db,
+            raw_token=payload.token,
+            new_password=payload.new_password,
+        )
+        return ResetPasswordResponse(
+            success=True,
+            message="Your password has been changed successfully. You can now log in with your new password.",
+        )
+
+    # 2. Legacy OTP-based reset
+    if payload.identifier and payload.otp:
+        reset_password_with_otp(
+            db=db,
+            identifier=payload.identifier,
+            otp=payload.otp,
+            new_password=payload.new_password,
+        )
+        return ResetPasswordResponse(
+            success=True,
+            message="Your password has been changed successfully in the database. You can now log in with your new password.",
+        )
+
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail="Either reset token or identifier with OTP code is required.",
     )
 
 
