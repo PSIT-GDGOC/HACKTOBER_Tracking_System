@@ -950,7 +950,8 @@ def test_github_oauth_callback_flow(client_and_db):
         "github_id": "778899",
     }
 
-    with patch("app.routers.auth.exchange_github_oauth_code", new=AsyncMock(return_value=fake_gh_profile)):
+    with patch("app.routers.auth.exchange_github_oauth_code", new=AsyncMock(return_value=fake_gh_profile)), \
+         patch("app.services.auth_service.validate_github_username", return_value=("oauth-contributor", "778899")):
         res = client.post(
             "/auth/github/callback",
             json={"code": "valid-oauth-code-123"},
