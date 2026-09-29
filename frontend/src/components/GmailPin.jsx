@@ -25,20 +25,27 @@ export function GmailPin({
   const isTypo = validation && !validation.ok && validation.code === "TYPO" && validation.suggestion;
   const isInvalid = validation && !validation.ok && !isTypo;
   const isValid = validation && validation.ok;
+  // On login a non-gmail email is still a valid identifier (roll number OR email),
+  // so the note stays an informational, non-blocking hint — never red.
+  const isLoginHint = isInvalid && variant === "login";
 
   // Determine state-based visual styling
   let containerTone = "border-ink bg-gyellow/30 shadow-[3px_3px_0_0_#101010]";
   let pinBadge = "border-ink bg-white text-ink";
   let statusIcon = "📌";
 
-  if (isInvalid) {
+  if (isTypo) {
+    containerTone = "border-ink bg-gyellow-light shadow-[3px_3px_0_0_#FBBC04]";
+    pinBadge = "border-ink bg-gyellow text-ink";
+    statusIcon = "💡";
+  } else if (isLoginHint) {
+    containerTone = "border-ink bg-gyellow-light shadow-[3px_3px_0_0_#101010]";
+    pinBadge = "border-ink bg-gyellow text-ink";
+    statusIcon = "ℹ";
+  } else if (isInvalid) {
     containerTone = "border-gred bg-gred-light/60 shadow-[3px_3px_0_0_#EA4335]";
     pinBadge = "border-gred bg-white text-gred";
     statusIcon = "✕";
-  } else if (isTypo) {
-    containerTone = "border-gyellow bg-gyellow-light shadow-[3px_3px_0_0_#FBBC04]";
-    pinBadge = "border-ink bg-gyellow text-ink";
-    statusIcon = "💡";
   } else if (isValid) {
     containerTone = "border-ggreen bg-ggreen-light/70 shadow-[3px_3px_0_0_#34A853]";
     pinBadge = "border-ggreen bg-white text-ggreen";
@@ -51,7 +58,7 @@ export function GmailPin({
       role="note"
       aria-label="Gmail requirement note"
       className={cn(
-        "relative mb-3.5 w-full border-[2.5px] p-3 transition-all duration-200 ease-out motion-reduce:transition-none sm:-rotate-[0.75deg]",
+        "relative mb-3.5 w-full border-[2.5px] p-3 transition-colors duration-150 motion-reduce:transition-none sm:-rotate-[0.75deg]",
         containerTone,
         className,
       )}
@@ -74,7 +81,7 @@ export function GmailPin({
             PINNED · GMAIL ONLY
           </span>
           {isValid && (
-            <span className="font-mono text-[10px] font-bold uppercase text-ggreen">
+            <span className="font-mono text-[10px] font-bold uppercase text-ink">
               ✓ Verified
             </span>
           )}
@@ -82,15 +89,10 @@ export function GmailPin({
 
         {/* Dynamic content & live validation area */}
         <div aria-live="polite" className="mt-1 text-xs text-ink">
-          {isInvalid ? (
-            <div className="flex items-start gap-1.5 font-sans font-medium text-gred">
-              <span className="font-mono font-bold" aria-hidden="true">✕</span>
-              <span>{validation.message}</span>
-            </div>
-          ) : isTypo ? (
+          {isTypo ? (
             <div className="space-y-1.5">
               <p className="font-medium text-ink">
-                Looks like a typo in your domain: <span className="font-mono font-bold underline">{validation.message}</span>
+                Looks like a typo in your domain: <span className="font-mono font-bold underline">{validation.suggestion}</span>
               </p>
               {onApplySuggestion && (
                 <button
@@ -102,6 +104,17 @@ export function GmailPin({
                 </button>
               )}
             </div>
+          ) : isInvalid ? (
+            isLoginHint ? (
+              <p className="leading-snug">
+                That address won't end in <strong className="font-bold underline decoration-ink">@gmail.com</strong> — use your roll number, or sign in with your official Google address.
+              </p>
+            ) : (
+              <div className="flex items-start gap-1.5 font-sans font-medium text-ink">
+                <span className="font-mono font-bold text-gred" aria-hidden="true">✕</span>
+                <span>{validation.message}</span>
+              </div>
+            )
           ) : (
             <>
               {variant === "login" ? (
@@ -122,7 +135,7 @@ export function GmailPin({
                   Example:
                 </span>
                 <span className="inline-block max-w-full break-words border-2 border-ink bg-white px-2 py-0.5 font-mono text-[11px] font-bold text-ink shadow-[2px_2px_0_0_#101010]">
-                  rudransh<strong className="text-gblue">@gmail.com</strong>
+                  rudransh<strong className="text-gblue-dark">@gmail.com</strong>
                 </span>
               </div>
             </>

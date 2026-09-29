@@ -180,7 +180,7 @@ export function Chip({ active, children, onClick, className }) {
 const fieldBase =
   "w-full border-[3px] border-ink bg-white px-3.5 py-2.5 font-sans text-sm text-ink placeholder:text-ink-soft/50 focus:outline-none focus:shadow-[4px_4px_0_0_#4285F4] focus:-translate-y-0.5 transition-all";
 
-export function Field({ label, hint, error, children }) {
+export function Field({ label, hint, error, errorId, children }) {
   return (
     <label className="block">
       <span className="mb-1.5 flex items-baseline justify-between gap-2">
@@ -188,7 +188,7 @@ export function Field({ label, hint, error, children }) {
         {hint && <span className="font-mono text-[10px] text-ink-soft">{hint}</span>}
       </span>
       {children}
-      {error && <span className="mt-1 block font-mono text-[11px] font-bold text-gred">▲ {error}</span>}
+      {error && <span id={errorId} className="mt-1 block font-mono text-[11px] font-bold text-gred">▲ {error}</span>}
     </label>
   );
 }

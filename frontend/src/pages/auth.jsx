@@ -20,7 +20,7 @@ import {
   Badge, Button, Callout, Field, GdgMark, Input, Panel, Sticker,
 } from "@/components/ui";
 import { GmailPin } from "@/components/GmailPin";
-import { validateGmail, normalizeEmail, GMAIL_EXAMPLE } from "@/lib/validation/gmail";
+import { validateGmail, GMAIL_EXAMPLE } from "@/lib/validation/gmail";
 
 const STEPS = ["Intro", "Sign up", "ID check", "Result", "GitHub"];
 
@@ -391,6 +391,7 @@ export function AuthWizard() {
               />
               <Field
                 label="Email"
+                errorId="signup-email-error"
                 error={emailValidation && !emailValidation.ok && emailValidation.code !== "TYPO" ? emailValidation.message : undefined}
               >
                 <Input
@@ -400,10 +401,15 @@ export function AuthWizard() {
                   autoCapitalize="none"
                   autoCorrect="off"
                   spellCheck={false}
-                  aria-describedby="signup-gmail-pin"
+                  aria-describedby="signup-gmail-pin signup-email-error"
+                  aria-invalid={Boolean(
+                    emailValidation && !emailValidation.ok && emailValidation.code !== "TYPO",
+                  )}
                   value={form.email}
                   onChange={(e) => {
-                    const val = e.target.value;
+                    // Normalize as the user types (trim + lowercase) so the submitted value
+                    // is always the normalized one.
+                    const val = e.target.value.trim().toLowerCase();
                     setForm({ ...form, email: val });
                     if (emailTouched) {
                       setEmailValidation(val ? validateGmail(val) : null);
@@ -411,9 +417,7 @@ export function AuthWizard() {
                   }}
                   onBlur={() => {
                     setEmailTouched(true);
-                    if (form.email) {
-                      setEmailValidation(validateGmail(form.email));
-                    }
+                    setEmailValidation(form.email ? validateGmail(form.email) : null);
                   }}
                   placeholder={GMAIL_EXAMPLE}
                 />
@@ -798,11 +802,10 @@ export function Login() {
 
     let finalIdentifier = id;
     if (id.includes("@")) {
+      // Non-blocking: a non-gmail email is still a valid identifier for login.
+      // The GmailPin note above the field carries the hint instead.
       const emailRes = validateGmail(id);
-      if (!emailRes.ok) {
-        return setError(emailRes.message);
-      }
-      finalIdentifier = emailRes.value;
+      finalIdentifier = emailRes.ok ? emailRes.value : id;
     }
 
     setError(null);
@@ -912,10 +915,7 @@ export function Login() {
                   validation={identifier.includes("@") ? validateGmail(identifier) : null}
                   onApplySuggestion={(s) => setIdentifier(s)}
                 />
-                <Field
-                  label="Roll number or email"
-                  error={identifier.includes("@") && !validateGmail(identifier).ok && validateGmail(identifier).code !== "TYPO" ? validateGmail(identifier).message : undefined}
-                >
+                <Field label="Roll number or email">
                   <Input
                     value={identifier}
                     onChange={(e) => setIdentifier(e.target.value)}
