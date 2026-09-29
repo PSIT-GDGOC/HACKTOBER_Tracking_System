@@ -107,7 +107,7 @@ export function RequireRole({ roles, children }) {
   if (loading) return <AuthBootLoader />;
   if (!isAuthenticated) return <Navigate to="/login" state={{ from: location.pathname }} replace />;
   if (user && user.role === "student" && (!user.verified || !user.github_username)) {
-    return <Navigate to="/join" state={{ from: location.pathname }} replace />;
+    return <Navigate to="/join" state={{ step: (!user.verified ? 2 : 4), from: location.pathname }} replace />;
   }
   if (roles && user && !roles.includes(user.role)) return <Navigate to="/dashboard/403" replace />;
   return <>{children}</>;
