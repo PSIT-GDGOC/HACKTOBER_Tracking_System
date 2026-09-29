@@ -27,7 +27,7 @@ async def _org_sync_loop():
     from app.db import SessionLocal
     from app.services.org_sync_service import sync_org_repos
 
-    await asyncio.sleep(10)  # small delay after startup so DB is ready
+    await asyncio.sleep(5)  # brief delay after startup so requests are served first
     while True:
         try:
             db = SessionLocal()
@@ -45,70 +45,11 @@ async def _org_sync_loop():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """App lifespan: run startup org sync then launch periodic background sync."""
-    from app.db import SessionLocal
-    from app.services.org_sync_service import sync_org_repos
-
-    # ── Startup: self-heal DB schema (BIGINT columns, delivery_id) ────────────
-    from app.db import engine
-    from sqlalchemy import text
-    try:
-        if engine.dialect.name == "postgresql":
-            logger.info("Startup DB check: ensuring BigInteger columns on PostgreSQL...")
-            with engine.connect() as conn:
-                conn.execute(text("ALTER TABLE issues ALTER COLUMN github_issue_id TYPE BIGINT;"))
-                conn.execute(text("ALTER TABLE pull_requests ALTER COLUMN github_pr_id TYPE BIGINT;"))
-                conn.execute(text("ALTER TABLE webhook_jobs ADD COLUMN IF NOT EXISTS delivery_id VARCHAR(100);"))
-                conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_webhook_jobs_delivery_id ON webhook_jobs (delivery_id);"))
-                conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_otp_hash TEXT;"))
-                conn.execute(text("ALTER TABLE users ALTER COLUMN reset_otp_hash TYPE TEXT;"))
-                conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_otp_expires TIMESTAMP;"))
-                conn.execute(text("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_email_verified BOOLEAN NOT NULL DEFAULT FALSE;"))
-                conn.execute(text("ALTER TYPE contributionstatus ADD VALUE IF NOT EXISTS 'released';"))
-                conn.execute(text("""
-                    DELETE FROM contributions a USING contributions b
-                    WHERE a.id < b.id AND a.user_id = b.user_id AND a.issue_id = b.issue_id;
-                """))
-                conn.execute(text("CREATE UNIQUE INDEX IF NOT EXISTS ix_contributions_user_issue ON contributions (user_id, issue_id);"))
-                conn.execute(text("""
-                    CREATE TABLE IF NOT EXISTS email_tokens (
-                        id SERIAL PRIMARY KEY,
-                        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                        token_hash VARCHAR(64) NOT NULL,
-                        purpose VARCHAR(50) NOT NULL,
-                        expires_at TIMESTAMP WITHOUT TIME ZONE NOT NULL,
-                        used_at TIMESTAMP WITHOUT TIME ZONE,
-                        created_at TIMESTAMP WITHOUT TIME ZONE NOT NULL DEFAULT NOW()
-                    );
-                """))
-                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_email_tokens_id ON email_tokens (id);"))
-                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_email_tokens_user_id ON email_tokens (user_id);"))
-                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_email_tokens_token_hash ON email_tokens (token_hash);"))
-                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_email_tokens_purpose ON email_tokens (purpose);"))
-                conn.commit()
-                logger.info("Startup DB check: Schema auto-migrations applied successfully.")
-    except Exception as e:
-        logger.warning("Startup DB check (non-fatal): %s", e)
-
-    # ── Startup: immediate one-shot sync ──────────────────────────────────────
-    logger.info("Startup: Running initial PSIT-GDGOC org repo sync...")
-    try:
-        db = SessionLocal()
-        result = await sync_org_repos(db)
-        logger.info("Startup OrgSync complete: %s", result)
-    except Exception as e:
-        logger.error("Startup OrgSync failed (non-fatal): %s", e)
-    finally:
-        try:
-            db.close()
-        except Exception:
-            pass
-
-    # ── Launch periodic background sync ───────────────────────────────────────
+    """App lifespan: launch periodic background sync immediately without blocking cold starts."""
     sync_task = asyncio.create_task(_org_sync_loop())
     logger.info("OrgSync background task started (interval: %ds)", ORG_SYNC_INTERVAL_SECONDS)
 
-    yield  # app is running
+    yield  # app is running immediately
 
     # ── Shutdown: cancel background task ──────────────────────────────────────
     sync_task.cancel()

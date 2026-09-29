@@ -24,10 +24,11 @@ else:
     engine = create_engine(
         _pg_url,
         echo=settings.DEBUG,  # Only logs SQL in local dev when DEBUG=True
-        pool_pre_ping=True,   # Validates connections before use (handles Supabase idle timeouts)
+        pool_pre_ping=True,   # Validates connections before use (handles idle timeouts)
         pool_size=5,          # Persistent connections in pool
         max_overflow=10,      # Extra connections allowed under high load
         pool_recycle=300,     # Recycle connections every 5 min (prevents stale connections)
+        connect_args={"connect_timeout": 10},
     )
 
 # Session factory

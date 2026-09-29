@@ -72,16 +72,13 @@ def record_email_sent(email: str) -> None:
 
 
 def _build_action_urls(endpoint: str, token: str) -> tuple[str, str]:
-    """Generate both hash and path URLs for frontend compatibility.
+    """Generate HashRouter-compatible URLs for frontend action links.
 
     Returns (primary_url, fallback_url).
     """
     base = settings.FRONTEND_URL.rstrip("/")
-    # Primary link uses the clean path format
-    primary_url = f"{base}/{endpoint}?token={token}"
-    # Hash link supports React HashRouter directly
     hash_url = f"{base}/#/{endpoint}?token={token}"
-    return primary_url, hash_url
+    return hash_url, hash_url
 
 
 def send_verification_email(to_email: str, name: str, token: str) -> None:
@@ -228,22 +225,22 @@ def _dispatch_email(to_email: str, subject: str, html_content: str, text_content
 
         sent = False
         try:
-            with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT or 587, timeout=10) as server:
-                server.starttls()
-                server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-                server.send_message(msg)
-            logger.info("%s email successfully dispatched via SMTP (port %s) to <%s>", action_name, settings.SMTP_PORT, to_email)
+            with smtplib.SMTP_SSL(settings.SMTP_HOST, 465, timeout=6) as ssl_server:
+                ssl_server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+                ssl_server.send_message(msg)
+            logger.info("%s email successfully dispatched via SMTP SSL (port 465) to <%s>", action_name, to_email)
             sent = True
-        except Exception as smtp_exc:
-            logger.warning("SMTP port %s failed for <%s>: %s. Retrying via SSL port 465...", settings.SMTP_PORT, to_email, smtp_exc)
+        except Exception as ssl_exc:
+            logger.warning("SMTP SSL port 465 failed for <%s>: %s. Retrying via STARTTLS port %s...", to_email, ssl_exc, settings.SMTP_PORT)
             try:
-                with smtplib.SMTP_SSL(settings.SMTP_HOST, 465, timeout=10) as ssl_server:
-                    ssl_server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-                    ssl_server.send_message(msg)
-                logger.info("%s email successfully dispatched via SMTP SSL (port 465) to <%s>", action_name, to_email)
+                with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT or 587, timeout=6) as server:
+                    server.starttls()
+                    server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+                    server.send_message(msg)
+                logger.info("%s email successfully dispatched via SMTP (port %s) to <%s>", action_name, settings.SMTP_PORT, to_email)
                 sent = True
-            except Exception as ssl_exc:
-                logger.error("Failed to send %s email to <%s> via SMTP SSL (port 465): %s", action_name, to_email, ssl_exc)
+            except Exception as smtp_exc:
+                logger.error("Failed to send %s email to <%s> via SMTP: %s", action_name, to_email, smtp_exc)
 
         if sent:
             return

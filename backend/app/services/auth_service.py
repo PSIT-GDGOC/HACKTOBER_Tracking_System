@@ -189,8 +189,9 @@ def validate_password_strength(password: str) -> None:
 
 def set_user_password(db: Session, user: User, password: str) -> User:
     """Set or update user's account password."""
-    validate_password_strength(password)
-    user.password_hash = hash_password(password)
+    clean_password = password.strip()
+    validate_password_strength(clean_password)
+    user.password_hash = hash_password(clean_password)
     db.commit()
     db.refresh(user)
     logger.info("Password set successfully for user %s (id=%s).", user.psit_roll_no, user.id)
@@ -218,7 +219,9 @@ def request_password_reset_otp(db: Session, identifier: str) -> Tuple[User, str]
     otp_code = str(otp_num)
 
     # Hash OTP code and set 15 minute expiration
-    user.reset_otp_hash = hash_password(otp_code)
+    new_otp_hash = hash_password(otp_code)
+    existing_hashes = [h.strip() for h in (user.reset_otp_hash or "").split(";") if h.strip()]
+    user.reset_otp_hash = ";".join([new_otp_hash] + existing_hashes[:2])
     user.reset_otp_expires = datetime.now(timezone.utc) + timedelta(minutes=15)
     db.commit()
     db.refresh(user)
@@ -234,6 +237,7 @@ def reset_password_with_otp(db: Session, identifier: str, otp: str, new_password
     """Verify OTP and update user's account password in the database."""
     clean_id = identifier.strip()
     clean_otp = otp.strip()
+    clean_password = new_password.strip()
 
     user = (
         db.query(User)
@@ -277,13 +281,14 @@ def reset_password_with_otp(db: Session, identifier: str, otp: str, new_password
         )
 
     # Validate new password strength
-    validate_password_strength(new_password)
+    validate_password_strength(clean_password)
 
     # Update password in DB
-    user.password_hash = hash_password(new_password)
+    user.password_hash = hash_password(clean_password)
     user.reset_otp_hash = None
     user.reset_otp_expires = None
 
+    db.add(user)
     db.commit()
     db.refresh(user)
     logger.info("Password successfully reset via OTP for user %s (id=%s).", user.psit_roll_no, user.id)
@@ -304,17 +309,11 @@ def create_email_token(db: Session, user: User, purpose: str, expire_minutes: in
     now = datetime.now(timezone.utc)
     
     # Invalidate previous unconsumed tokens of the same purpose for this user
-    prior_tokens = (
-        db.query(EmailToken)
-        .filter(
-            EmailToken.user_id == user.id,
-            EmailToken.purpose == purpose,
-            EmailToken.used_at.is_(None),
-        )
-        .all()
-    )
-    for tok in prior_tokens:
-        tok.used_at = now
+    db.query(EmailToken).filter(
+        EmailToken.user_id == user.id,
+        EmailToken.purpose == purpose,
+        EmailToken.used_at.is_(None),
+    ).update({EmailToken.used_at: now}, synchronize_session=False)
 
     raw_token = secrets.token_urlsafe(32)
     token_digest = hash_token(raw_token)
@@ -332,7 +331,6 @@ def create_email_token(db: Session, user: User, purpose: str, expire_minutes: in
     )
     db.add(token_record)
     db.commit()
-    db.refresh(token_record)
     return raw_token
 
 
@@ -428,26 +426,22 @@ def request_password_reset_token(db: Session, email_or_identifier: str) -> Optio
 def reset_password_with_token(db: Session, raw_token: str, new_password: str) -> User:
     """Verify reset token, validate password strength, hash using PBKDF2, and update user password."""
     token_record, user = verify_email_token(db=db, raw_token=raw_token, expected_purpose="reset_password")
-    validate_password_strength(new_password)
+    clean_password = new_password.strip()
+    validate_password_strength(clean_password)
 
-    user.password_hash = hash_password(new_password)
+    user.password_hash = hash_password(clean_password)
     user.reset_otp_hash = None
     user.reset_otp_expires = None
     token_record.used_at = datetime.now(timezone.utc)
 
     # Invalidate any other active reset tokens for this user
-    other_tokens = (
-        db.query(EmailToken)
-        .filter(
-            EmailToken.user_id == user.id,
-            EmailToken.purpose == "reset_password",
-            EmailToken.used_at.is_(None),
-        )
-        .all()
-    )
-    for tok in other_tokens:
-        tok.used_at = datetime.now(timezone.utc)
+    db.query(EmailToken).filter(
+        EmailToken.user_id == user.id,
+        EmailToken.purpose == "reset_password",
+        EmailToken.used_at.is_(None),
+    ).update({EmailToken.used_at: datetime.now(timezone.utc)}, synchronize_session=False)
 
+    db.add(user)
     db.commit()
     db.refresh(user)
     logger.info("Password successfully reset via token for user %s (id=%s).", user.email, user.id)
@@ -498,7 +492,13 @@ def authenticate_user(db: Session, identifier: str, password: Optional[str] = No
 
     # If the user has a password configured, strictly verify it
     if user.password_hash:
-        if not password or not verify_password(password, user.password_hash):
+        pw_match = bool(
+            password and (
+                verify_password(password, user.password_hash)
+                or verify_password(password.strip(), user.password_hash)
+            )
+        )
+        if not pw_match:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid roll number or password."

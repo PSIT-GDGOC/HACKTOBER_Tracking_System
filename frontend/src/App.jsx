@@ -16,6 +16,20 @@ import AdminConsole from "@/pages/admin";
 import { Forbidden, NotFound } from "@/pages/misc";
 
 export default function App() {
+  if (
+    typeof window !== "undefined" &&
+    !window.location.hash &&
+    (window.location.pathname.startsWith("/reset-password") ||
+      window.location.pathname.startsWith("/verify-email") ||
+      window.location.pathname.startsWith("/forgot-password"))
+  ) {
+    window.history.replaceState(
+      null,
+      "",
+      `/#${window.location.pathname}${window.location.search}`
+    );
+  }
+
   return (
     <ErrorBoundary>
       <AuthProvider>

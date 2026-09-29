@@ -92,7 +92,12 @@ class ResetPasswordRequest(BaseModel):
     new_password: str = Field(..., min_length=8, max_length=128, description="New strong password")
     # Legacy OTP parameters for backwards compatibility
     identifier: Optional[str] = Field(None, description="PSIT roll number or email address (legacy OTP)")
-    otp: Optional[str] = Field(None, min_length=6, max_length=6, description="6-digit OTP code (legacy OTP)")
+    otp: Optional[str] = Field(None, min_length=6, max_length=12, description="6-digit OTP code (legacy OTP)")
+
+    @field_validator("otp", "identifier", "token", "new_password", mode="before")
+    @classmethod
+    def _strip_strings(cls, v: Any) -> Any:
+        return v.strip() if isinstance(v, str) else v
 
 
 class ResetPasswordResponse(BaseModel):

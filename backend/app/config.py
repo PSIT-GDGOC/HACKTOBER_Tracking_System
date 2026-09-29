@@ -6,8 +6,8 @@ class Settings(BaseSettings):
     ENV: str = "development"
     DEBUG: bool = False  # Default False; only True in local dev via .env
 
-    # Database — Neon PostgreSQL
-    DATABASE_URL: str = "postgresql://neondb_owner:npg_B9MbHqGiwd3e@ep-falling-flower-b54gens1.c-7.us-east-2.aws.neon.tech/neondb?sslmode=require"
+    # Database — Neon PostgreSQL (PgBouncer pooled endpoint for fast serverless connections)
+    DATABASE_URL: str = "postgresql://neondb_owner:npg_B9MbHqGiwd3e@ep-falling-flower-b54gens1-pooler.c-7.us-east-2.aws.neon.tech/neondb?sslmode=require"
 
     # Security & Auth
     SECRET_KEY: str = "9f83b2a8d4e5c6b7a8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1"
@@ -69,11 +69,15 @@ class Settings(BaseSettings):
 
     @property
     def db_url(self) -> str:
-        """Return SQLAlchemy-compatible URL. Supabase provides 'postgres://' which
-        SQLAlchemy 2.x requires to be 'postgresql://'."""
+        """Return SQLAlchemy-compatible URL. Ensures Neon endpoints use the PgBouncer pooler."""
         url = self.DATABASE_URL
         if url.startswith("postgres://"):
             url = url.replace("postgres://", "postgresql://", 1)
+        if "ep-falling-flower-b54gens1.c-7.us-east-2.aws.neon.tech" in url:
+            url = url.replace(
+                "ep-falling-flower-b54gens1.c-7.us-east-2.aws.neon.tech",
+                "ep-falling-flower-b54gens1-pooler.c-7.us-east-2.aws.neon.tech",
+            )
         return url
 
     @property

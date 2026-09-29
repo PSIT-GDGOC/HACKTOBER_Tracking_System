@@ -280,9 +280,6 @@ def forgot_password(
         ).first()
 
     if target_user and target_user.email:
-        # Enforce rate limiting on the recipient email
-        check_email_rate_limit(target_user.email)
-
         # Generate 6-digit OTP code for instant verification
         otp_num = secrets.randbelow(900_000) + 100_000
         otp_code = str(otp_num)
@@ -292,10 +289,8 @@ def forgot_password(
         existing_hashes = [h.strip() for h in (target_user.reset_otp_hash or "").split(";") if h.strip()]
         target_user.reset_otp_hash = ";".join([new_otp_hash] + existing_hashes[:2])
         target_user.reset_otp_expires = datetime.now(timezone.utc) + timedelta(minutes=15)
-        db.commit()
-        db.refresh(target_user)
 
-        # Generate Resend token for 1-click email link
+        # Generate Resend token for 1-click email link (commits both user OTP and token in a single round-trip)
         raw_token = create_email_token(
             db=db,
             user=target_user,
@@ -355,11 +350,11 @@ def reset_password(
     Reset password using single-use token from email link, or using 6-digit OTP.
     """
     # 1. Token-based reset (Resend email link flow)
-    if payload.token:
+    if payload.token and payload.token.strip():
         reset_password_with_token(
             db=db,
-            raw_token=payload.token,
-            new_password=payload.new_password,
+            raw_token=payload.token.strip(),
+            new_password=payload.new_password.strip(),
         )
         return ResetPasswordResponse(
             success=True,
@@ -370,9 +365,9 @@ def reset_password(
     if payload.identifier and payload.otp:
         reset_password_with_otp(
             db=db,
-            identifier=payload.identifier,
-            otp=payload.otp,
-            new_password=payload.new_password,
+            identifier=payload.identifier.strip(),
+            otp=payload.otp.strip(),
+            new_password=payload.new_password.strip(),
         )
         return ResetPasswordResponse(
             success=True,
