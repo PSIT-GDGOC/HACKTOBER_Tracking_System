@@ -214,31 +214,52 @@ def send_password_reset_email(to_email: str, name: str, token: str, otp_code: Op
 
 
 def _dispatch_email(to_email: str, subject: str, html_content: str, text_content: str, action_name: str) -> None:
-    """Internal helper to dispatch email via Resend or log appropriately in dev/test."""
+    """Internal helper to dispatch email via SMTP (e.g. Gmail) or Resend."""
     record_email_sent(to_email)
 
-    if not settings.RESEND_API_KEY:
-        logger.info(
-            "RESEND_API_KEY is not configured. %s email to <%s> logged (Subject: %s).",
-            action_name,
-            to_email,
-            subject,
-        )
-        return
+    # 1. Prefer SMTP if configured (works seamlessly with Gmail to any address)
+    if settings.SMTP_HOST and settings.SMTP_USER and settings.SMTP_PASSWORD:
+        try:
+            msg = MIMEMultipart("alternative")
+            msg["Subject"] = subject
+            msg["From"] = settings.SMTP_FROM or settings.SMTP_USER
+            msg["To"] = to_email
+            msg.attach(MIMEText(text_content, "plain"))
+            msg.attach(MIMEText(html_content, "html"))
 
-    try:
-        resend.api_key = settings.RESEND_API_KEY
-        params: resend.Emails.SendParams = {
-            "from": settings.EMAIL_FROM,
-            "to": [to_email],
-            "subject": subject,
-            "html": html_content,
-            "text": text_content,
-        }
-        resend.Emails.send(params)
-        logger.info("%s email successfully dispatched via Resend to <%s>", action_name, to_email)
-    except Exception as exc:
-        logger.error("Failed to send %s email to <%s> via Resend: %s", action_name, to_email, exc)
+            with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=10) as server:
+                server.starttls()
+                server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+                server.send_message(msg)
+
+            logger.info("%s email successfully dispatched via SMTP (%s) to <%s>", action_name, settings.SMTP_HOST, to_email)
+            return
+        except Exception as exc:
+            logger.error("Failed to send %s email to <%s> via SMTP: %s", action_name, to_email, exc)
+
+    # 2. Try Resend if configured
+    if settings.RESEND_API_KEY:
+        try:
+            resend.api_key = settings.RESEND_API_KEY
+            params: resend.Emails.SendParams = {
+                "from": settings.EMAIL_FROM,
+                "to": [to_email],
+                "subject": subject,
+                "html": html_content,
+                "text": text_content,
+            }
+            resend.Emails.send(params)
+            logger.info("%s email successfully dispatched via Resend to <%s>", action_name, to_email)
+            return
+        except Exception as exc:
+            logger.error("Failed to send %s email to <%s> via Resend: %s", action_name, to_email, exc)
+
+    logger.info(
+        "Neither SMTP nor Resend active. %s email to <%s> logged (Subject: %s).",
+        action_name,
+        to_email,
+        subject,
+    )
 
 
 # ──────────────────────────────────────────────────────────────────────
