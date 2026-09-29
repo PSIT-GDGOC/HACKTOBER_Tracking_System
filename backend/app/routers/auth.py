@@ -286,7 +286,11 @@ def forgot_password(
         # Generate 6-digit OTP code for instant verification
         otp_num = secrets.randbelow(900_000) + 100_000
         otp_code = str(otp_num)
-        target_user.reset_otp_hash = hash_password(otp_code)
+        new_otp_hash = hash_password(otp_code)
+
+        # Keep recent valid hashes (separated by ';') so re-requested OTPs don't instantly break previous ones
+        existing_hashes = [h.strip() for h in (target_user.reset_otp_hash or "").split(";") if h.strip()]
+        target_user.reset_otp_hash = ";".join([new_otp_hash] + existing_hashes[:2])
         target_user.reset_otp_expires = datetime.now(timezone.utc) + timedelta(minutes=15)
         db.commit()
         db.refresh(target_user)

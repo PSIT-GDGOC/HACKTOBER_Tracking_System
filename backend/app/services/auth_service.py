@@ -266,8 +266,11 @@ def reset_password_with_otp(db: Session, identifier: str, otp: str, new_password
             detail="The password reset code has expired. Please request a new code."
         )
 
-    # Verify OTP
-    if not verify_password(clean_otp, user.reset_otp_hash):
+    # Verify OTP against stored hash (supports recent active hashes separated by ';')
+    stored_hashes = [h.strip() for h in (user.reset_otp_hash or "").split(";") if h.strip()]
+    is_valid = any(verify_password(clean_otp, h) for h in stored_hashes)
+
+    if not is_valid:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid verification code. Please check the code sent to your email."
