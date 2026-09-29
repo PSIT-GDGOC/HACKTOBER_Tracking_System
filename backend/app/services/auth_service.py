@@ -775,20 +775,27 @@ def link_github_account(
     github_id: Optional[str] = None
 ) -> User:
     """Link verified student to their GitHub identity after validating existence on GitHub."""
-    clean_username, fetched_id = validate_github_username(github_username)
-    final_github_id = github_id or fetched_id
+    clean_input = github_username.strip().lstrip("@")
+    if not clean_input:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="GitHub username cannot be empty."
+        )
 
-    # Guard: prevent two students linking the same GitHub identity
+    # Guard: prevent two students linking the same GitHub identity (DB check first)
     existing = (
         db.query(User)
-        .filter(User.github_username.ilike(clean_username), User.id != user.id)
+        .filter(User.github_username.ilike(clean_input), User.id != user.id)
         .first()
     )
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"GitHub username '{clean_username}' is already linked to another student account."
+            detail=f"GitHub username '{clean_input}' is already linked to another student account."
         )
+
+    clean_username, fetched_id = validate_github_username(github_username)
+    final_github_id = github_id or fetched_id
 
     user.github_username = clean_username
     if final_github_id:

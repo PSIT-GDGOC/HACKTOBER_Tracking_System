@@ -17,6 +17,7 @@ import io
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from PIL import Image
 from sqlalchemy import create_engine
@@ -600,12 +601,13 @@ def test_github_link_validates_existence(client_and_db):
     db.commit()
 
     # Case 1: GitHub returns 404 -> Rejected
-    mock_404_resp = MagicMock()
-    mock_404_resp.status_code = 404
-    mock_client_404 = AsyncMock()
-    mock_client_404.__aenter__.return_value.get.return_value = mock_404_resp
-
-    with patch("httpx.AsyncClient", return_value=mock_client_404):
+    with patch(
+        "app.services.auth_service.validate_github_username",
+        side_effect=HTTPException(
+            status_code=400,
+            detail="GitHub account '@fake-nonexistent-user-12345' was not found on GitHub. Please check the spelling."
+        )
+    ):
         res_404 = client.post(
             "/auth/github/link",
             json={"github_username": "fake-nonexistent-user-12345"},
@@ -615,13 +617,10 @@ def test_github_link_validates_existence(client_and_db):
     assert "was not found on GitHub" in res_404.json()["detail"]
 
     # Case 2: GitHub returns 200 -> Accepted and github_id populated
-    mock_200_resp = MagicMock()
-    mock_200_resp.status_code = 200
-    mock_200_resp.json.return_value = {"login": "real-dev", "id": 54321}
-    mock_client_200 = AsyncMock()
-    mock_client_200.__aenter__.return_value.get.return_value = mock_200_resp
-
-    with patch("httpx.AsyncClient", return_value=mock_client_200):
+    with patch(
+        "app.services.auth_service.validate_github_username",
+        return_value=("real-dev", "54321")
+    ):
         res_200 = client.post(
             "/auth/github/link",
             json={"github_username": "real-dev"},
