@@ -823,12 +823,13 @@ def test_forgot_password_and_otp_reset(client_and_db):
     assert "access_token" in res_login.json()
 
 
-def test_forgot_password_nonexistent_user_returns_404(client_and_db):
-    """Requesting password reset for unregistered roll or email returns 404."""
+def test_forgot_password_nonexistent_user_returns_generic_200(client_and_db):
+    """Requesting password reset for unregistered roll or email returns generic 200 to prevent account enumeration."""
     client, _ = client_and_db
     res = client.post("/auth/forgot-password", json={"identifier": "9999999999999"})
-    assert res.status_code == 404
-    assert "No registered account found" in res.json()["detail"]
+    assert res.status_code == 200
+    assert res.json()["success"] is True
+    assert "If an account with that roll number exists" in res.json()["message"]
 
 
 def test_reset_password_expired_otp_returns_400(client_and_db):
