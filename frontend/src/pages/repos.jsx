@@ -1,11 +1,7 @@
-/**
- * Repository Hub — repositories discovered from issue/PR rows; each repo renders
- * Overview / Pull Requests / Commits tabs (GET /dashboard/repository/{id}).
- * Also hosts the cross-repo Pull Requests and Commits pages.
- */
 import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { api, discoverRepositories } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { useData } from "@/lib/hooks";
 import { compact, PLATFORM_LABEL } from "@/lib/format";
 import { PageHeader, UpdatedPill } from "@/components/Layout";
@@ -246,15 +242,17 @@ function RepoHub({ repo }) {
 }
 
 /* ================================================================== */
-/*  Pull requests (global list)                                        */
+/*  Pull requests (global list + personal toggle)                     */
 /* ================================================================== */
 
 const PAGE = 20;
 
 export function PullRequests() {
   const [params, setParams] = useSearchParams();
+  const { user } = useAuth();
   const drawers = useDrawers();
   const [repos, setRepos] = useState([]);
+  const [scope, setScope] = useState("all"); // 'all' | 'mine'
   const [filters, setFilters] = useState({
     status: params.get("status") ?? "",
     repo_id: params.get("repo_id") ?? "",
@@ -277,18 +275,32 @@ export function PullRequests() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [params]);
 
+  const queryParams = {
+    status: filters.status || undefined,
+    repo_id: filters.repo_id || undefined,
+    user_id: scope === "mine" && user?.id ? user.id : undefined,
+    skip: filters.skip,
+    limit: PAGE,
+  };
+
   const q = useData(
-    () => api.pullRequests({
-      status: filters.status || undefined,
-      repo_id: filters.repo_id || undefined,
-      skip: filters.skip,
-      limit: PAGE,
-    }),
-    [filters],
+    () => api.pullRequests(queryParams),
+    [filters, scope, user?.id],
     { pollMs: 30000 },
   );
 
-  const total = q.data?.total ?? 0;
+  const rawItems = q.data?.items || [];
+  const searchLower = filters.search.trim().toLowerCase();
+  const filteredItems = rawItems.filter((p) => {
+    if (!searchLower) return true;
+    const titleMatch = (p.title || "").toLowerCase().includes(searchLower);
+    const prIdMatch = String(p.github_pr_id || "").includes(searchLower);
+    const userMatch = (p.user?.name || "").toLowerCase().includes(searchLower) ||
+                      (p.user?.github_username || "").toLowerCase().includes(searchLower);
+    return titleMatch || prIdMatch || userMatch;
+  });
+
+  const total = scope === "mine" ? filteredItems.length : (q.data?.total ?? 0);
   const page = Math.floor(filters.skip / PAGE) + 1;
   const totalPages = Math.max(1, Math.ceil(total / PAGE));
 
@@ -324,14 +336,65 @@ export function PullRequests() {
         sticker={`${total} PRs`}
         actions={<UpdatedPill lastUpdated={q.lastUpdated} />}
       />
-      <div className="mb-5">
-        <FilterBar groups={groups} count={total} onReset={() => setFilters({ status: "", repo_id: "", search: "", skip: 0 })} />
+
+      {/* Scope toggle: All vs My PRs */}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex gap-2">
+          <button
+            onClick={() => { setScope("all"); setFilters((f) => ({ ...f, skip: 0 })); }}
+            className={`border-2 border-ink px-4 py-1.5 font-display text-xs font-bold uppercase ${
+              scope === "all" ? "bg-ink text-gyellow shadow-[3px_3px_0_0_#101010]" : "bg-white hover:bg-gyellow-light"
+            }`}
+          >
+            All Pull Requests
+          </button>
+          {user && (
+            <button
+              onClick={() => { setScope("mine"); setFilters((f) => ({ ...f, skip: 0 })); }}
+              className={`border-2 border-ink px-4 py-1.5 font-display text-xs font-bold uppercase ${
+                scope === "mine" ? "bg-ink text-gyellow shadow-[3px_3px_0_0_#101010]" : "bg-white hover:bg-gyellow-light"
+              }`}
+            >
+              My Pull Requests {user.github_username ? `(@${user.github_username})` : ""}
+            </button>
+          )}
+        </div>
       </div>
+
+      <div className="mb-5">
+        <FilterBar
+          groups={groups}
+          search={filters.search}
+          onSearch={(val) => setFilters((f) => ({ ...f, search: val, skip: 0 }))}
+          searchPlaceholder="Search title, PR # or handle…"
+          count={filteredItems.length}
+          onReset={() => setFilters({ status: "", repo_id: "", search: "", skip: 0 })}
+        />
+      </div>
+
       {q.loading && <LoadingBlock rows={5} />}
       {q.error && <ErrorState message={q.error} onRetry={q.refetch} />}
-      {q.data && (q.data.items || []).length === 0 && <EmptyState title="No pull requests found" body="Try clearing the filters." />}
+      {q.data && filteredItems.length === 0 && (
+        <EmptyState
+          title={scope === "mine" ? "No pull requests found for your account" : "No pull requests match"}
+          body={
+            scope === "mine"
+              ? user?.github_username
+                ? `No PRs linked to @${user.github_username} yet. Opening a PR on GitHub referencing a claimed issue automatically links it here.`
+                : "You haven't linked your GitHub username yet. Go to your Profile to connect your GitHub account."
+              : "Try clearing your search query or picking a different status/repository."
+          }
+          action={
+            scope === "mine" && !user?.github_username ? (
+              <LinkButton to="/dashboard/profile" variant="blue">Connect GitHub handle →</LinkButton>
+            ) : scope === "mine" ? (
+              <LinkButton to="/dashboard/issues" variant="green">Browse issues to claim →</LinkButton>
+            ) : undefined
+          }
+        />
+      )}
       <div className="space-y-3">
-        {(q.data?.items || []).map((p) => <PRCard key={p.id} pr={p} />)}
+        {filteredItems.map((p) => <PRCard key={p.id} pr={p} />)}
       </div>
       {q.data && totalPages > 1 && (
         <Pagination page={page} totalPages={totalPages} onPage={(p) => setFilters((f) => ({ ...f, skip: (p - 1) * PAGE }))} />
@@ -342,12 +405,14 @@ export function PullRequests() {
 }
 
 /* ================================================================== */
-/*  Commits feed                                                       */
+/*  Commits feed (global list + personal toggle)                       */
 /* ================================================================== */
 
 export function Commits() {
-  const [params] = useSearchParams();
+  const { user } = useAuth();
   const [repoId, setRepoId] = useState("");
+  const [scope, setScope] = useState("all"); // 'all' | 'mine'
+  const [search, setSearch] = useState("");
   const [repos, setRepos] = useState([]);
   const [skip, setSkip] = useState(0);
   const LIMIT = 20;
@@ -356,19 +421,39 @@ export function Commits() {
     discoverRepositories().then(setRepos).catch(() => {});
   }, []);
 
+  const queryParams = {
+    repo_id: repoId || undefined,
+    user_id: scope === "mine" && user?.id ? user.id : undefined,
+    skip,
+    limit: LIMIT,
+  };
+
   const q = useData(
-    () => api.commits({ repo_id: repoId || undefined, skip, limit: LIMIT }),
-    [repoId, skip],
+    () => api.commits(queryParams),
+    [repoId, scope, user?.id, skip],
     { pollMs: 30000 },
   );
 
-  const total = q.data?.total ?? 0;
+  const rawCommits = q.data?.items || [];
+  const searchLower = search.trim().toLowerCase();
+  const filteredCommits = rawCommits.filter((c) => {
+    if (!searchLower) return true;
+    const msgMatch = (c.message || "").toLowerCase().includes(searchLower);
+    const shaMatch = (c.github_commit_sha || "").toLowerCase().includes(searchLower);
+    const userMatch = (c.user?.name || "").toLowerCase().includes(searchLower) ||
+                      (c.user?.github_username || "").toLowerCase().includes(searchLower);
+    return msgMatch || shaMatch || userMatch;
+  });
+
+  const total = scope === "mine" ? filteredCommits.length : (q.data?.total ?? 0);
   const page = Math.floor(skip / LIMIT) + 1;
   const totalPages = Math.max(1, Math.ceil(total / LIMIT));
 
   const groups = [
     {
-      label: "Repository", value: repoId || "all", onChange: (v) => { setRepoId(v === "all" ? "" : v); setSkip(0); },
+      label: "Repository",
+      value: repoId || "all",
+      onChange: (v) => { setRepoId(v === "all" ? "" : v); setSkip(0); },
       options: [
         { value: "all", label: "All repos" },
         ...repos.map((r) => ({ value: String(r.id), label: r.name })),
@@ -385,14 +470,65 @@ export function Commits() {
         sticker={`${total} commits`}
         actions={<UpdatedPill lastUpdated={q.lastUpdated} />}
       />
-      <div className="mb-5">
-        <FilterBar groups={groups} count={total} />
+
+      {/* Scope toggle: All vs My Commits */}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex gap-2">
+          <button
+            onClick={() => { setScope("all"); setSkip(0); }}
+            className={`border-2 border-ink px-4 py-1.5 font-display text-xs font-bold uppercase ${
+              scope === "all" ? "bg-ink text-gyellow shadow-[3px_3px_0_0_#101010]" : "bg-white hover:bg-gyellow-light"
+            }`}
+          >
+            All Commits
+          </button>
+          {user && (
+            <button
+              onClick={() => { setScope("mine"); setSkip(0); }}
+              className={`border-2 border-ink px-4 py-1.5 font-display text-xs font-bold uppercase ${
+                scope === "mine" ? "bg-ink text-gyellow shadow-[3px_3px_0_0_#101010]" : "bg-white hover:bg-gyellow-light"
+              }`}
+            >
+              My Commits {user.github_username ? `(@${user.github_username})` : ""}
+            </button>
+          )}
+        </div>
       </div>
+
+      <div className="mb-5">
+        <FilterBar
+          groups={groups}
+          search={search}
+          onSearch={(val) => { setSearch(val); setSkip(0); }}
+          searchPlaceholder="Search commit message, SHA or handle…"
+          count={filteredCommits.length}
+          onReset={() => { setRepoId(""); setSearch(""); setSkip(0); }}
+        />
+      </div>
+
       {q.loading && <LoadingBlock rows={6} />}
       {q.error && <ErrorState message={q.error} onRetry={q.refetch} />}
-      {q.data && (q.data.items || []).length === 0 && <EmptyState title="No commits match" />}
-      {q.data && (q.data.items || []).length > 0 && (
-        <Panel className="p-5">{q.data.items.map((c, i) => <CommitRow key={i} commit={c} />)}</Panel>
+      {q.data && filteredCommits.length === 0 && (
+        <EmptyState
+          title={scope === "mine" ? "No commits recorded for your account" : "No commits match"}
+          body={
+            scope === "mine"
+              ? user?.github_username
+                ? `No commits synced for @${user.github_username} yet. Pushing commits to GitHub repos auto-records them here via webhooks.`
+                : "You haven't linked your GitHub username yet. Connect your GitHub handle in your Profile to sync your commits."
+              : "Try clearing your search query or picking a different repository."
+          }
+          action={
+            scope === "mine" && !user?.github_username ? (
+              <LinkButton to="/dashboard/profile" variant="blue">Connect GitHub handle →</LinkButton>
+            ) : undefined
+          }
+        />
+      )}
+      {q.data && filteredCommits.length > 0 && (
+        <Panel className="p-5">
+          {filteredCommits.map((c, i) => <CommitRow key={i} commit={c} />)}
+        </Panel>
       )}
       {q.data && totalPages > 1 && (
         <Pagination page={page} totalPages={totalPages} onPage={(p) => setSkip((p - 1) * LIMIT)} />

@@ -731,13 +731,20 @@ def validate_github_username(github_username: str) -> Tuple[str, Optional[str]]:
         Tuple of (canonical_username: str, github_id: Optional[str])
 
     Raises:
-        HTTPException 400 if the GitHub username does not exist (404).
+        HTTPException 400 if the GitHub username does not exist (404) or is invalid format.
     """
+    import re
     clean_username = github_username.strip().lstrip("@")
     if not clean_username:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="GitHub username cannot be empty."
+        )
+
+    if not re.match(r"^[a-zA-Z0-9](?:[a-zA-Z0-9]|-(?=[a-zA-Z0-9])){0,38}$", clean_username):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"'{clean_username}' is not a valid GitHub username format. Usernames can only contain alphanumeric characters and single hyphens.",
         )
 
     headers = {

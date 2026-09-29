@@ -50,6 +50,7 @@ export default function Profile() {
       github_username: form.github_username.trim().replace(/^@/, "") || undefined,
     });
     if (res) {
+      await refreshUser().catch(() => {});
       setEditing(false);
       setFlash("Profile saved ✓");
       setTimeout(() => setFlash(null), 2500);

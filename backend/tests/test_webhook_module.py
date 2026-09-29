@@ -384,3 +384,42 @@ def test_issues_webhook_auto_creates_repo_and_handles_deletion(client_and_db, mo
     deleted_issue = db.query(Issue).filter(Issue.github_issue_id == 998877).first()
     assert deleted_issue is None
 
+
+def test_issues_webhook_completed_and_not_planned(client_and_db, monkeypatch):
+    client, db = client_and_db
+    monkeypatch.setattr(settings, "GITHUB_WEBHOOK_SECRET", "")
+
+    from app.models import Issue, Claim, Contribution, IssueStatus, ClaimStatus, ContributionStatus, ContributionValidation
+
+    # 1. Open issue and claim it
+    open_payload = {
+        "action": "opened",
+        "repository": {"name": "hacktoberfest-web", "html_url": "https://github.com/gdgoc-psit/hacktoberfest-web"},
+        "issue": {"id": 554433, "title": "Add dark mode toggle", "body": "Toggle UI theme", "labels": [{"name": "easy"}]}
+    }
+    client.post("/webhooks/github", json=open_payload, headers={"X-GitHub-Event": "issues"})
+    issue = db.query(Issue).filter(Issue.github_issue_id == 554433).first()
+    assert issue is not None
+
+    # Student 1 claims issue
+    client.post(f"/issues/{issue.id}/claim", headers={"X-User-Id": "1"})
+
+    # 2. GitHub issue closed as completed
+    completed_payload = {
+        "action": "closed",
+        "repository": {"name": "hacktoberfest-web", "html_url": "https://github.com/gdgoc-psit/hacktoberfest-web"},
+        "issue": {"id": 554433, "state_reason": "completed"}
+    }
+    res = client.post("/webhooks/github", json=completed_payload, headers={"X-GitHub-Event": "issues"})
+    assert res.status_code == 200
+
+    db.refresh(issue)
+    assert issue.status == IssueStatus.CLOSED
+
+    claim = db.query(Claim).filter(Claim.issue_id == issue.id, Claim.user_id == 1).first()
+    assert claim.status == ClaimStatus.COMPLETED
+
+    contrib = db.query(Contribution).filter(Contribution.issue_id == issue.id, Contribution.user_id == 1).first()
+    assert contrib.status == ContributionStatus.ACCEPTED
+    assert contrib.validation_status == ContributionValidation.VALID
+

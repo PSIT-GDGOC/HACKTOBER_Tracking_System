@@ -89,9 +89,27 @@ function WizardShell({ step, children }) {
 
 export function AuthWizard() {
   const nav = useNavigate();
-  const { refreshUser } = useAuth();
+  const location = useLocation();
+  const { user, refreshUser } = useAuth();
   const [step, setStep] = useState(0);
   const [error, setError] = useState(null);
+
+  /* Detect step from state or authenticated user */
+  useEffect(() => {
+    if (location.state?.step !== undefined) {
+      setStep(location.state.step);
+    } else if (user && user.role === "student") {
+      if (user.verified && user.github_username) {
+        setLinked(true);
+        setGithubUsername(user.github_username);
+        setStep(4);
+      } else if (user.verified) {
+        setStep(4);
+      } else {
+        setStep(2);
+      }
+    }
+  }, [user, location.state]);
 
   /* signup form */
   const [form, setForm] = useState({ name: "", email: "", psit_roll_no: "", agree: false });
@@ -108,9 +126,10 @@ export function AuthWizard() {
   const [verifyResult, setVerifyResult] = useState(null); // { verified, status, message }
 
   /* github */
-  const [githubUsername, setGithubUsername] = useState("");
+  const [githubUsername, setGithubUsername] = useState(user?.github_username || "");
   const [linkingGithub, setLinkingGithub] = useState(false);
-  const [linked, setLinked] = useState(false);
+  const [oauthLoading, setOauthLoading] = useState(false);
+  const [linked, setLinked] = useState(!!user?.github_username);
 
   /* password setup */
   const [password, setPassword] = useState("");
@@ -220,9 +239,11 @@ export function AuthWizard() {
   /* verify-id needs a JWT — the backend attaches the upload to the session user.
      Right after signup there is no session, so we log in first (identifier = roll). */
   const ensureSession = async () => {
+    if (tokenStore.get() && !tokenStore.isExpired()) return true;
     try {
       const session = await api.login({ identifier: signedUpUser?.psit_roll_no ?? form.psit_roll_no.trim() });
       tokenStore.set(session.access_token, session.expires_in);
+      await refreshUser().catch(() => {});
       return true;
     } catch {
       return false;
@@ -241,8 +262,25 @@ export function AuthWizard() {
     await doVerify();
   };
 
+  const doOAuthConnect = async () => {
+    setError(null);
+    setOauthLoading(true);
+    try {
+      const res = await api.githubLoginUrl();
+      if (res?.oauth_url) {
+        window.location.href = res.oauth_url;
+      } else {
+        setError("Could not retrieve GitHub OAuth URL.");
+      }
+    } catch (err) {
+      setError(err?.detail || err?.message || "Failed to start GitHub OAuth flow.");
+    } finally {
+      setOauthLoading(false);
+    }
+  };
+
   const doLinkGithub = async (e) => {
-    e.preventDefault();
+    if (e) e.preventDefault();
     const username = githubUsername.trim().replace(/^@/, "");
     if (!username) return setError("Enter your GitHub username.");
     setError(null);
@@ -251,6 +289,8 @@ export function AuthWizard() {
       const res = await api.linkGithub({ github_username: username });
       if (res) {
         setLinked(true);
+        setGithubUsername(res.github_username || username);
+        await refreshUser().catch(() => {});
       }
     } catch (err) {
       setError(err?.detail || err?.message || "Failed to link GitHub account.");
@@ -260,10 +300,6 @@ export function AuthWizard() {
   };
 
   const enterDashboard = async () => {
-    if (!passwordSaved) {
-      setPasswordError("Please create a password for your account before entering the dashboard.");
-      return;
-    }
     const updatedUser = await refreshUser().catch(() => null);
     if (updatedUser?.role === "student" && !updatedUser?.github_username && !linked && !githubUsername.trim()) {
       setError("Linking your GitHub account is required before entering the dashboard.");
@@ -447,21 +483,21 @@ export function AuthWizard() {
       {/* ---------------- 3 · result ---------------- */}
       {step === 3 && (
         <>
-          <Sticker tone={verifyResult?.verified ? "green" : (verifyResult?.status?.startsWith("duplicate") ? "red" : "yellow")} rotate="-2">
-            Step 3 of 3
+          <Sticker tone={verifyResult?.verified || user?.verified ? "green" : (verifyResult?.status?.startsWith("duplicate") ? "red" : "yellow")} rotate="-2">
+            Step 4 of 5
           </Sticker>
           <h1 className="mt-4 font-display text-3xl font-extrabold uppercase leading-none tracking-tight">
-            {verifyResult?.verified
+            {verifyResult?.verified || user?.verified
               ? "You're verified ✓"
               : verifyResult?.status?.startsWith("duplicate")
               ? "ID Card Already Registered"
               : "Verification Required"}
           </h1>
 
-          {verifyResult?.verified ? (
+          {verifyResult?.verified || user?.verified ? (
             <div className="mt-5 border-[3px] border-ink bg-ggreen-light p-4 shadow-[5px_5px_0_0_#101010]">
-              <p className="font-display text-sm font-extrabold uppercase text-ggreen">{verifyResult.status || "AUTO_VERIFIED"}</p>
-              <p className="mt-1 text-sm leading-relaxed text-ink-soft">{verifyResult.message}</p>
+              <p className="font-display text-sm font-extrabold uppercase text-ggreen">{verifyResult?.status || "VERIFIED"}</p>
+              <p className="mt-1 text-sm leading-relaxed text-ink-soft">{verifyResult?.message || "Student identity verified successfully."}</p>
             </div>
           ) : (
             <div className={`mt-5 border-[3px] border-ink p-5 shadow-[5px_5px_0_0_#101010] ${verifyResult?.status?.startsWith("duplicate") ? "bg-red-50" : "bg-gyellow-light"}`}>
@@ -500,7 +536,7 @@ export function AuthWizard() {
             </div>
           )}
 
-          {verifyResult?.verified && (
+          {(verifyResult?.verified || user?.verified) && (
             <>
               {/* Account Password Setup */}
               {!passwordSaved ? (
@@ -567,22 +603,72 @@ export function AuthWizard() {
                 </div>
               )}
 
-              <h2 className="mt-8 font-display text-xl font-extrabold uppercase tracking-tight">Connect your GitHub</h2>
-              <p className="mt-1 text-sm text-ink-soft">
-                Required before you can claim issues — PRs and commits are matched to your claims by
-                GitHub username.
-              </p>
+              <div className="mt-8 border-t-2 border-dashed border-paper-3 pt-5">
+                <Button variant="green" size="lg" className="w-full" onClick={() => setStep(4)}>
+                  Next: Connect GitHub Account →
+                </Button>
+              </div>
+            </>
+          )}
+        </>
+      )}
 
-              {linked ? (
-                <Panel className="mt-4 border-ggreen p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <p className="font-display text-lg font-extrabold">@{githubUsername.replace(/^@/, "")}</p>
-                    <Badge tone="green" dot>Linked</Badge>
+      {/* ---------------- 4 · GitHub ---------------- */}
+      {step === 4 && (
+        <>
+          <Sticker tone={linked || user?.github_username ? "green" : "yellow"} rotate="1">
+            Step 5 of 5
+          </Sticker>
+          <h1 className="mt-4 font-display text-3xl font-extrabold uppercase leading-none tracking-tight">
+            Connect your GitHub account
+          </h1>
+          <p className="mt-2 text-sm text-ink-soft">
+            Required before you can claim issues — PRs and commits are matched to your claims by your GitHub handle.
+          </p>
+
+          {linked || user?.github_username ? (
+            <div className="mt-6 space-y-4">
+              <Panel className="border-ggreen bg-ggreen-light p-5 shadow-[4px_4px_0_0_#101010]">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="font-mono text-xs font-bold uppercase tracking-wider text-ink-soft">GitHub Identity Linked</p>
+                    <p className="font-display text-2xl font-extrabold text-ink">@{githubUsername.replace(/^@/, "") || user?.github_username}</p>
                   </div>
-                </Panel>
-              ) : (
+                  <Badge tone="green" dot>Verified &amp; Linked</Badge>
+                </div>
+              </Panel>
+              <Button variant="green" size="lg" className="w-full" onClick={enterDashboard}>
+                Enter the Dashboard →
+              </Button>
+            </div>
+          ) : (
+            <div className="mt-6 space-y-6">
+              {/* Option A: OAuth Authorization */}
+              <div className="border-[3px] border-ink bg-white p-5 shadow-[4px_4px_0_0_#101010]">
+                <div className="flex items-center gap-2">
+                  <span className="flex h-6 w-6 items-center justify-center bg-ink text-white font-mono text-xs font-bold border-2 border-ink">
+                    ⚡
+                  </span>
+                  <h2 className="font-display text-base font-extrabold uppercase">Option A: Authorize via GitHub OAuth</h2>
+                </div>
+                <p className="mt-1 text-xs text-ink-soft">
+                  One-click verification. Authenticate with GitHub to verify your account handle automatically.
+                </p>
+                <div className="mt-4">
+                  <Button variant="blue" size="md" onClick={doOAuthConnect} loading={oauthLoading} className="w-full">
+                    Authorize with GitHub ↗
+                  </Button>
+                </div>
+              </div>
+
+              {/* Option B: Manual Username Linking */}
+              <div className="border-[3px] border-ink bg-paper-2/40 p-5 shadow-[4px_4px_0_0_#101010]">
+                <h2 className="font-display text-base font-extrabold uppercase">Option B: Link Username Manually</h2>
+                <p className="mt-1 text-xs text-ink-soft">
+                  Enter your GitHub handle directly. We will verify that the account exists on GitHub.
+                </p>
                 <form onSubmit={doLinkGithub} className="mt-4 space-y-3">
-                  <Field label="GitHub username" hint="your public GitHub handle">
+                  <Field label="GitHub handle" hint="e.g. octocat">
                     <Input
                       value={githubUsername}
                       onChange={(e) => setGithubUsername(e.target.value)}
@@ -591,18 +677,12 @@ export function AuthWizard() {
                     />
                   </Field>
                   {error && <p className="font-mono text-xs font-bold text-gred">▲ {error}</p>}
-                  <div className="flex flex-wrap gap-3">
-                    <Button type="submit" variant="ink" loading={linkingGithub}>Link account</Button>
-                  </div>
+                  <Button type="submit" variant="ink" size="md" loading={linkingGithub} className="w-full">
+                    Link Handle Manually →
+                  </Button>
                 </form>
-              )}
-
-              <div className="mt-8 border-t-2 border-dashed border-paper-3 pt-5">
-                <Button variant="green" size="lg" className="w-full" onClick={enterDashboard}>
-                  Enter the dashboard →
-                </Button>
               </div>
-            </>
+            </div>
           )}
         </>
       )}
@@ -679,13 +759,11 @@ export function Login() {
       const user = await login(id, password.trim());
       if (user && user.role === "student") {
         if (!user.verified) {
-          logout();
-          setError("Your account is not verified. You must complete ID card verification before logging into the system.");
+          nav("/join", { state: { step: 2 } });
           return;
         }
         if (!user.github_username) {
-          logout();
-          setError("GitHub account is required. You must link your GitHub username before signing in.");
+          nav("/join", { state: { step: 4 } });
           return;
         }
       }
@@ -965,15 +1043,19 @@ export function GitHubOAuthCallback() {
     if (loading) return;
 
     // Extract authorization code or error parameters from URL query strings
-    // Handles both hash-query (?code=...#/auth/callback) and router query (#/auth/callback?code=...)
+    // Handles hash-query (?code=...#/auth/callback), search routing (?code=...), and hash routing (#/auth/callback?code=...)
     const routerParams = new URLSearchParams(location.search);
     const windowParams = new URLSearchParams(window.location.search);
+    const hashQuery = window.location.hash.includes("?") ? window.location.hash.split("?")[1] : "";
+    const hashParams = new URLSearchParams(hashQuery);
 
     const oauthError =
       routerParams.get("error_description") ||
       routerParams.get("error") ||
       windowParams.get("error_description") ||
-      windowParams.get("error");
+      windowParams.get("error") ||
+      hashParams.get("error_description") ||
+      hashParams.get("error");
 
     if (oauthError) {
       setStatus("error");
@@ -981,7 +1063,10 @@ export function GitHubOAuthCallback() {
       return;
     }
 
-    const code = routerParams.get("code") || windowParams.get("code");
+    const code =
+      routerParams.get("code") ||
+      windowParams.get("code") ||
+      hashParams.get("code");
     if (!code) {
       setStatus("error");
       setMessage("No authorization code provided in the GitHub callback URL.");
