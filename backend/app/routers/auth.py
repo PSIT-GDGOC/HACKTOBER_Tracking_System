@@ -200,13 +200,14 @@ def send_verification(
     token_result = request_email_verification_token(db=db, email=target_email)
     if token_result:
         user, raw_token = token_result
-        target_name = user.name
-        background_tasks.add_task(
-            send_verification_email,
-            to_email=user.email,
-            name=target_name,
-            token=raw_token,
-        )
+        try:
+            send_verification_email(
+                to_email=user.email,
+                name=target_name,
+                token=raw_token,
+            )
+        except Exception as exc:
+            logger.error("Failed to send verification email to <%s>: %s", user.email, exc)
 
     return SendVerificationResponse(
         success=True,
@@ -298,14 +299,16 @@ def forgot_password(
             expire_minutes=settings.RESET_TOKEN_EXPIRE_MINUTES,
         )
 
-        # Dispatch reset email in background containing BOTH the reset link and OTP
-        background_tasks.add_task(
-            send_password_reset_email,
-            to_email=target_user.email,
-            name=target_user.name,
-            token=raw_token,
-            otp_code=otp_code,
-        )
+        # Dispatch reset email synchronously containing BOTH the reset link and OTP
+        try:
+            send_password_reset_email(
+                to_email=target_user.email,
+                name=target_user.name,
+                token=raw_token,
+                otp_code=otp_code,
+            )
+        except Exception as exc:
+            logger.error("Failed to send reset email to <%s>: %s", target_user.email, exc)
 
         # Compute masked email (e.g. a***a@gmail.com) for user privacy
         parts = target_user.email.split("@")
@@ -324,19 +327,19 @@ def forgot_password(
                 email=target_user.email,
             )
 
-    # If no account found, return generic message to prevent account enumeration
+    # If roll number is not found in database, inform the user clearly
     if is_numeric_roll:
-        return ForgotPasswordResponse(
-            success=True,
-            message="If an account with that roll number exists, password reset instructions have been sent.",
-            email=None,
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No account found with roll number '{raw_input}'. Please check your roll number or register first.",
         )
-    else:
-        return ForgotPasswordResponse(
-            success=True,
-            message="If an account with that email exists, password reset instructions have been sent.",
-            email=raw_input if is_email else None,
-        )
+
+    # For email, return generic message to prevent account enumeration
+    return ForgotPasswordResponse(
+        success=True,
+        message="If an account with that email exists, password reset instructions have been sent.",
+        email=raw_input if is_email else None,
+    )
 
 
 @router.post("/reset-password", response_model=ResetPasswordResponse, summary="Reset password using token or OTP")

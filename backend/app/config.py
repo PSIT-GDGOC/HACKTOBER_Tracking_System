@@ -25,16 +25,16 @@ class Settings(BaseSettings):
     GITHUB_CLIENT_SECRET: str = ""
     GITHUB_OAUTH_REDIRECT_URI: str = "https://hacktober-tracking-system-ocai.vercel.app/#/auth/callback"
 
-    # Email / SMTP Settings (for password reset OTPs)
-    SMTP_HOST: str = ""
+    # Email / SMTP Settings (Gmail App Password fallback)
+    SMTP_HOST: str = "smtp.gmail.com"
     SMTP_PORT: int = 587
-    SMTP_USER: str = ""
-    SMTP_PASSWORD: str = ""
-    SMTP_FROM: str = "noreply@gdgoc-psit.ac.in"
+    SMTP_USER: str = "2k24.cs1b.2412161@gmail.com"
+    SMTP_PASSWORD: str = "azlbawzagppattsf"
+    SMTP_FROM: str = "GDG On Campus PSIT <2k24.cs1b.2412161@gmail.com>"
 
     # Resend Email Integration
     RESEND_API_KEY: str = ""
-    EMAIL_FROM: str = "YourApp <onboarding@resend.dev>"
+    EMAIL_FROM: str = "GDG On Campus PSIT <onboarding@resend.dev>"
     FRONTEND_URL: str = "https://hacktober-tracking-system-ocai.vercel.app"
     VERIFY_TOKEN_EXPIRE_MINUTES: int = 30
     RESET_TOKEN_EXPIRE_MINUTES: int = 30

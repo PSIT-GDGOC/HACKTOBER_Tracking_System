@@ -219,23 +219,34 @@ def _dispatch_email(to_email: str, subject: str, html_content: str, text_content
 
     # 1. Prefer SMTP if configured (works seamlessly with Gmail to any address)
     if settings.SMTP_HOST and settings.SMTP_USER and settings.SMTP_PASSWORD:
-        try:
-            msg = MIMEMultipart("alternative")
-            msg["Subject"] = subject
-            msg["From"] = settings.SMTP_FROM or settings.SMTP_USER
-            msg["To"] = to_email
-            msg.attach(MIMEText(text_content, "plain"))
-            msg.attach(MIMEText(html_content, "html"))
+        msg = MIMEMultipart("alternative")
+        msg["Subject"] = subject
+        msg["From"] = settings.SMTP_FROM or settings.SMTP_USER
+        msg["To"] = to_email
+        msg.attach(MIMEText(text_content, "plain"))
+        msg.attach(MIMEText(html_content, "html"))
 
-            with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=10) as server:
+        sent = False
+        try:
+            with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT or 587, timeout=10) as server:
                 server.starttls()
                 server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
                 server.send_message(msg)
+            logger.info("%s email successfully dispatched via SMTP (port %s) to <%s>", action_name, settings.SMTP_PORT, to_email)
+            sent = True
+        except Exception as smtp_exc:
+            logger.warning("SMTP port %s failed for <%s>: %s. Retrying via SSL port 465...", settings.SMTP_PORT, to_email, smtp_exc)
+            try:
+                with smtplib.SMTP_SSL(settings.SMTP_HOST, 465, timeout=10) as ssl_server:
+                    ssl_server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
+                    ssl_server.send_message(msg)
+                logger.info("%s email successfully dispatched via SMTP SSL (port 465) to <%s>", action_name, to_email)
+                sent = True
+            except Exception as ssl_exc:
+                logger.error("Failed to send %s email to <%s> via SMTP SSL (port 465): %s", action_name, to_email, ssl_exc)
 
-            logger.info("%s email successfully dispatched via SMTP (%s) to <%s>", action_name, settings.SMTP_HOST, to_email)
+        if sent:
             return
-        except Exception as exc:
-            logger.error("Failed to send %s email to <%s> via SMTP: %s", action_name, to_email, exc)
 
     # 2. Try Resend if configured
     if settings.RESEND_API_KEY:
