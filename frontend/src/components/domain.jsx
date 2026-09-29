@@ -3,8 +3,9 @@ import { Link } from "react-router-dom";
 import { cn } from "@/utils/cn";
 import {
   ACTIVITY_ICON, CONTRIBUTION_FLOW, PLATFORM_LABEL, activityText, difficultyIcon,
-  difficultyTone, pointsFor, statusLabel, timeAgo,
+  difficultyTone, pointsFor, statusLabel,
 } from "@/lib/format";
+import { useAuth } from "@/lib/auth";
 import { githubIssueUrl, githubPrUrl } from "@/lib/api";
 import { routes } from "@/lib/routes";
 import {
@@ -74,30 +75,79 @@ export function FilterBar({
 /*  IssueCard + ClaimButton                                            */
 /* ------------------------------------------------------------------ */
 
-export function ClaimButton({ status, points, onClaim, onRelease, pending, disabled, hint }) {
-  if (status === "open")
+export function ClaimButton({
+  status,
+  points,
+  onClaim,
+  onRelease,
+  pending,
+  disabled,
+  hint,
+  isMine,
+  claimedByName,
+}) {
+  if (isMine) {
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge tone="blue" dot>CLAIMED BY YOU</Badge>
+        {onRelease && (
+          <Button
+            variant="red"
+            size="sm"
+            onClick={onRelease}
+            loading={pending}
+            disabled={disabled || pending}
+          >
+            Release claim
+          </Button>
+        )}
+      </div>
+    );
+  }
+
+  if (claimedByName || status === "claimed") {
+    return (
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge tone="blue" dot>
+          CLAIMED BY {claimedByName ?? "ANOTHER USER"}
+        </Badge>
+      </div>
+    );
+  }
+
+  if (status === "open") {
     return (
       <div className="space-y-1.5">
-        <Button variant="green" onClick={onClaim} loading={pending} disabled={disabled}>
+        <Button
+          variant="green"
+          onClick={onClaim}
+          loading={pending}
+          disabled={disabled || pending}
+        >
           ⚑ Claim Issue
         </Button>
         {hint && <p className="font-mono text-[10px] text-ink-soft">{hint}</p>}
       </div>
     );
+  }
+
   return (
     <div className="flex flex-wrap items-center gap-2">
-      <Badge tone="blue" dot>Claimed</Badge>
-      {onRelease && (
-        <Button variant="red" size="sm" onClick={onRelease} loading={pending}>
-          Release claim
-        </Button>
-      )}
+      <Badge tone="paper">{statusLabel(status)}</Badge>
     </div>
   );
 }
 
-export function IssueCard({ issue, onClaim, pending, compact }) {
+export function IssueCard({ issue, onClaim, onRelease, pending, compact }) {
+  const { user } = useAuth();
   const repoName = issue.repository?.name;
+  const isMine = !!(
+    issue.active_claim &&
+    user &&
+    String(issue.active_claim.user_id) === String(user.id)
+  );
+  const claimedByName = issue.active_claim?.user?.name;
+
   return (
     <Panel hover className="flex h-full flex-col p-4">
       <div className="mb-2.5 flex items-start justify-between gap-3">
@@ -143,9 +193,13 @@ export function IssueCard({ issue, onClaim, pending, compact }) {
         {onClaim && (
           <ClaimButton
             status={issue.status}
-            points={pts}
+            points={pointsFor(issue.difficulty)}
             pending={pending}
+            disabled={pending || (issue.active_claim && !isMine)}
+            isMine={isMine}
+            claimedByName={claimedByName}
             onClaim={() => onClaim(issue)}
+            onRelease={onRelease ? () => onRelease(issue) : undefined}
           />
         )}
       </div>

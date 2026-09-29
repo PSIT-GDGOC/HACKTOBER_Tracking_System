@@ -62,10 +62,12 @@ export function useData(fetcher, deps = [], { pollMs, enabled = true } = {}) {
 export function useMutation(fn) {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState(null);
+  const [lastError, setLastError] = useState(null);
   const mutate = useCallback(
     async (...args) => {
       setPending(true);
       setError(null);
+      setLastError(null);
       try {
         return await fn(...args);
       } catch (e) {
@@ -76,6 +78,7 @@ export function useMutation(fn) {
               ? e.message
               : "Request failed",
         );
+        setLastError(e);
         return null;
       } finally {
         setPending(false);
@@ -83,7 +86,7 @@ export function useMutation(fn) {
     },
     [fn],
   );
-  return { mutate, pending, error, setError };
+  return { mutate, pending, error, lastError, setError };
 }
 
 export function useDebounced(value, ms = 350) {

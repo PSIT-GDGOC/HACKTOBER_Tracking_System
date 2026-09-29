@@ -8,8 +8,9 @@ import { useCallback, useEffect, useState } from "react";
 import { api, githubIssueUrl, githubPrUrl, pointsFor } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useData, useMutation } from "@/lib/hooks";
-import { fullDate, statusLabel, timeAgo } from "@/lib/format";
+import { fullDate, statusLabel } from "@/lib/format";
 import { RelativeTime } from "./RelativeTime";
+import { toast } from "./Toast";
 import { cn } from "@/utils/cn";
 import { Badge, Button, Drawer, EmptyState, LoadingBlock, Panel, StatusBadge } from "./ui";
 
@@ -66,20 +67,41 @@ export function IssueDrawer({ issueId, onClose, onOpenPr }) {
   const doClaim = async () => {
     const res = await claim.mutate(issueId);
     if (res) {
-      setFlash(`Claim locked — you own this issue now. The claim is atomic, so nobody else can take it.`);
+      toast("Claim locked — you own this issue now.", { tone: "green" });
+      setFlash("Claim locked — you own this issue now.");
       q.refetch();
-    } else if (claim.error) {
-      setFlash(claim.error);
+    } else {
+      const err = claim.lastError;
+      if (
+        err?.status === 409 ||
+        err?.code === "ALREADY_CLAIMED" ||
+        err?.code === "CLAIM_CONFLICT" ||
+        err?.detail?.toLowerCase()?.includes("already claimed") ||
+        err?.detail?.toLowerCase()?.includes("conflict")
+      ) {
+        toast("Someone just claimed this issue", { tone: "yellow" });
+        setFlash("Someone just claimed this issue");
+      } else {
+        const msg = claim.error || "Failed to claim issue";
+        toast(msg, { tone: "red" });
+        setFlash(msg);
+      }
+      q.refetch();
     }
   };
 
   const doRelease = async () => {
     const res = await unclaim.mutate(issueId);
     if (res) {
-      setFlash(res.message || "Claim released.");
+      const msg = res.message || "Claim released.";
+      toast(msg, { tone: "green" });
+      setFlash(msg);
       q.refetch();
-    } else if (unclaim.error) {
-      setFlash(unclaim.error);
+    } else {
+      const msg = unclaim.error || "Failed to release claim";
+      toast(msg, { tone: "red" });
+      setFlash(msg);
+      q.refetch();
     }
   };
 
@@ -142,9 +164,14 @@ export function IssueDrawer({ issueId, onClose, onOpenPr }) {
 
           <Panel className="p-4">
             <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-soft">Claim</p>
-            {issue.status === "open" ? (
+            {issue.status === "open" && !issue.active_claim ? (
               <div className="mt-2">
-                <Button variant="green" onClick={doClaim} loading={claim.pending}>
+                <Button
+                  variant="green"
+                  onClick={doClaim}
+                  loading={claim.pending}
+                  disabled={claim.pending}
+                >
                   ⚑ Claim for {pointsFor(issue)} pts
                 </Button>
                 <p className="mt-2 font-mono text-[10px] text-ink-soft">
@@ -155,7 +182,9 @@ export function IssueDrawer({ issueId, onClose, onOpenPr }) {
               <div className="mt-2 space-y-2">
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge tone="blue" dot>
-                    claimed by {issue.active_claim.user?.name ?? "a student"}
+                    {isMine
+                      ? "CLAIMED BY YOU"
+                      : `CLAIMED BY ${issue.active_claim.user?.name ?? "ANOTHER STUDENT"}`}
                   </Badge>
                   {issue.active_claim.user?.github_username && (
                     <span className="font-mono text-[10px] text-ink-soft">@{issue.active_claim.user.github_username}</span>
@@ -165,7 +194,13 @@ export function IssueDrawer({ issueId, onClose, onOpenPr }) {
                   </span>
                 </div>
                 {(isMine || canModerate) && (
-                  <Button variant="red" size="sm" onClick={doRelease} loading={unclaim.pending}>
+                  <Button
+                    variant="red"
+                    size="sm"
+                    onClick={doRelease}
+                    loading={unclaim.pending}
+                    disabled={unclaim.pending}
+                  >
                     Release claim
                   </Button>
                 )}
