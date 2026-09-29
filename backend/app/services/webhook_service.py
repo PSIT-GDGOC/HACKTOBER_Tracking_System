@@ -275,6 +275,73 @@ def _handle_issues_event(payload: Dict[str, Any], repo: Optional[Repository], db
     if issue:
         if action == "closed":
             issue.status = IssueStatus.CLOSED
+            state_reason = (issue_data.get("state_reason") or "completed").lower()
+            now = datetime.now(timezone.utc)
+
+            # Find active claims on this issue
+            active_claims = (
+                db.query(Claim)
+                .filter(Claim.issue_id == issue.id, Claim.status == ClaimStatus.ACTIVE)
+                .all()
+            )
+
+            for claim in active_claims:
+                if state_reason == "not_planned":
+                    claim.status = ClaimStatus.EXPIRED
+                    contrib = (
+                        db.query(Contribution)
+                        .filter(Contribution.issue_id == issue.id, Contribution.user_id == claim.user_id)
+                        .order_by(Contribution.created_at.desc())
+                        .first()
+                    )
+                    if contrib:
+                        timeline = list(contrib.timeline_json or [])
+                        timeline.append({
+                            "status": "released",
+                            "timestamp": now.isoformat(),
+                            "detail": f"Issue #{issue.github_issue_id} marked as not planned on GitHub."
+                        })
+                        contrib.timeline_json = timeline
+                else:
+                    # Default / "completed"
+                    claim.status = ClaimStatus.COMPLETED
+                    contrib = (
+                        db.query(Contribution)
+                        .filter(Contribution.issue_id == issue.id, Contribution.user_id == claim.user_id)
+                        .order_by(Contribution.created_at.desc())
+                        .first()
+                    )
+                    if contrib:
+                        if contrib.status != ContributionStatus.MERGED:
+                            contrib.status = ContributionStatus.ACCEPTED
+                        contrib.validation_status = ContributionValidation.VALID
+                        timeline = list(contrib.timeline_json or [])
+                        timeline.append({
+                            "status": "completed",
+                            "timestamp": now.isoformat(),
+                            "detail": f"Issue #{issue.github_issue_id} marked as completed on GitHub."
+                        })
+                        contrib.timeline_json = timeline
+
+                    db.add(Notification(
+                        user_id=claim.user_id,
+                        type="issue_completed",
+                        payload={
+                            "title": "🎉 Issue Marked Completed",
+                            "message": f"Issue '{issue.title}' was marked as completed on GitHub. Your claim and contribution have been completed!",
+                            "issue_id": issue.id,
+                        },
+                        read=False,
+                        created_at=now,
+                    ))
+                    db.add(ActivityFeed(
+                        type="issue_completed",
+                        actor_id=claim.user_id,
+                        target_type="issue",
+                        target_id=issue.id,
+                        created_at=now,
+                    ))
+
         elif action in ["reopened", "opened"]:
             if issue.status == IssueStatus.CLOSED:
                 issue.status = IssueStatus.OPEN

@@ -177,6 +177,8 @@ export function PRCard({ pr, showContributor = true }) {
     : pr.status === "draft" ? "bg-gyellow text-ink"
     : "bg-paper-3 text-ink";
   const platform = pr.repository?.platform;
+  const prGithubUrl = githubPrUrl(pr.repository, pr);
+
   return (
     <Panel hover className="p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -192,10 +194,21 @@ export function PRCard({ pr, showContributor = true }) {
             )}
             {pr.linked_issue && (
               <button
+                type="button"
                 onClick={() => window.dispatchEvent(new CustomEvent("open-issue-drawer", { detail: pr.linked_issue.id }))}
               >
-                <Badge tone="blue">#{pr.linked_issue.github_issue_id}</Badge>
+                <Badge tone="blue">Linked Issue #{pr.linked_issue.github_issue_id}</Badge>
               </button>
+            )}
+            {prGithubUrl && (
+              <a
+                href={prGithubUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="font-mono text-[10px] font-bold uppercase text-gblue underline decoration-dotted hover:text-ink"
+              >
+                GitHub PR ↗
+              </a>
             )}
           </div>
           <button onClick={() => window.dispatchEvent(new CustomEvent("open-pr-drawer", { detail: pr.id }))} className="group block text-left">
@@ -204,18 +217,24 @@ export function PRCard({ pr, showContributor = true }) {
             </h3>
           </button>
           <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 font-mono text-[11px]">
-            {pr.user && <span className="font-bold">@{pr.user.github_username ?? pr.user.name}</span>}
-            <span className="text-ink-soft">{timeAgo(pr.updated_at)}</span>
+            {pr.user ? (
+              <Link to={`/dashboard/profile/${pr.user.id}`} className="font-bold text-ink hover:underline decoration-gblue">
+                @{pr.user.github_username ?? pr.user.name} ({pr.user.name})
+              </Link>
+            ) : (
+              <span className="text-ink-soft">GitHub Contributor</span>
+            )}
+            <span className="text-ink-soft">updated {timeAgo(pr.updated_at)}</span>
           </div>
         </div>
         {showContributor && pr.user && (
-          <div className="flex shrink-0 items-center gap-2">
+          <Link to={`/dashboard/profile/${pr.user.id}`} className="flex shrink-0 items-center gap-2 hover:opacity-80">
             <Avatar name={pr.user.name} size={34} />
             <div className="hidden leading-tight sm:block">
               <p className="font-display text-xs font-bold">{pr.user.name}</p>
               <p className="font-mono text-[10px] text-ink-soft">@{pr.user.github_username ?? "—"}</p>
             </div>
-          </div>
+          </Link>
         )}
       </div>
     </Panel>
@@ -227,20 +246,64 @@ export function PRCard({ pr, showContributor = true }) {
 /* ------------------------------------------------------------------ */
 
 export function CommitRow({ commit }) {
+  const commitUrl = commit.repository
+    ? `${commit.repository.github_repo_url.replace(/\/$/, "")}/commit/${commit.github_commit_sha}`
+    : null;
+
   return (
     <div className="flex flex-col gap-2 border-b-2 border-dashed border-paper-3 py-3 last:border-0 sm:flex-row sm:items-center sm:gap-4">
-      <a
-        href={commit.repository ? `${commit.repository.github_repo_url.replace(/\/$/, "")}/commit/${commit.github_commit_sha}` : "#"}
-        target="_blank"
-        rel="noreferrer"
-        className="shrink-0 border-2 border-ink bg-paper-2 px-2 py-1 text-center font-mono text-[11px] font-bold hover:bg-gyellow-light"
-      >
-        {String(commit.github_commit_sha || "").slice(0, 7)}
-      </a>
-      <p className="min-w-0 flex-1 break-words font-mono text-sm">{commit.message}</p>
+      <div className="flex items-center gap-2 shrink-0">
+        {commit.user ? (
+          <Link to={`/dashboard/profile/${commit.user.id}`} title={`View ${commit.user.name}'s profile`}>
+            <Avatar name={commit.user.name} size={28} />
+          </Link>
+        ) : (
+          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-paper-3 font-mono text-xs font-bold border-2 border-ink">
+            ⚙
+          </span>
+        )}
+        {commitUrl ? (
+          <a
+            href={commitUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="border-2 border-ink bg-paper-2 px-2 py-1 text-center font-mono text-[11px] font-bold hover:bg-gyellow-light"
+            title="View commit on GitHub"
+          >
+            {String(commit.github_commit_sha || "").slice(0, 7)} ↗
+          </a>
+        ) : (
+          <span className="border-2 border-ink bg-paper-2 px-2 py-1 text-center font-mono text-[11px] font-bold">
+            {String(commit.github_commit_sha || "").slice(0, 7)}
+          </span>
+        )}
+      </div>
+
+      <div className="min-w-0 flex-1">
+        <p className="break-words font-mono text-sm font-bold text-ink">{commit.message}</p>
+        {commit.repository && (
+          <p className="font-mono text-[10px] uppercase text-ink-soft">
+            {commit.repository.name}
+          </p>
+        )}
+      </div>
+
       <div className="flex shrink-0 items-center gap-3 font-mono text-[11px]">
-        {commit.user && <span className="font-bold">@{commit.user.github_username ?? commit.user.name}</span>}
-        {commit.pr_id && <span className="text-ink-soft">PR #{commit.pr_id}</span>}
+        {commit.user ? (
+          <Link
+            to={`/dashboard/profile/${commit.user.id}`}
+            className="font-bold text-ink hover:underline decoration-gblue"
+          >
+            @{commit.user.github_username ?? commit.user.name}
+          </Link>
+        ) : (
+          <span className="text-ink-soft">GitHub User</span>
+        )}
+        {commit.pr_id && (
+          <span className="border border-ink bg-gyellow/30 px-1.5 py-0.5 text-[10px] font-bold">
+            PR #{commit.pr_id}
+          </span>
+        )}
         <span className="text-ink-soft">{timeAgo(commit.committed_at)}</span>
       </div>
     </div>
