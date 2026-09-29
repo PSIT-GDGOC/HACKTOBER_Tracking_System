@@ -6,6 +6,7 @@ import {
   difficultyTone, pointsFor, statusLabel, timeAgo,
 } from "@/lib/format";
 import { githubIssueUrl, githubPrUrl } from "@/lib/api";
+import { routes } from "@/lib/routes";
 import {
   Avatar, Badge, Button, Chip, Panel, ProgressBar, Skeleton, StatusBadge,
 } from "./ui";
@@ -377,50 +378,69 @@ export function ContributionCard({ c, expandable = true }) {
   const [open, setOpen] = useState(false);
   const issue = c.issue;
   const pr = c.pull_request;
+  const issueId = issue?.id ?? c.issue_id;
+  const issueUrl = issueId ? routes.issue(issueId) : "/dashboard/issues";
+  const issueNum = issue?.github_issue_id ?? issue?.number ?? c.issue_id;
+  const issueTitle = issue?.title || "Untitled Issue";
+
   return (
-    <Panel className="overflow-hidden">
-      <div className="flex flex-col gap-3 p-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0 flex-1">
-          <div className="mb-2 flex flex-wrap items-center gap-1.5">
-            <StatusBadge status={c.status} />
-            <StatusBadge status={c.validation_status} />
-            {issue?.difficulty && (
-              <Badge tone="yellow">+{pointsFor(issue.difficulty)} pts</Badge>
-            )}
-          </div>
-          {issue && (
-            <button
-              onClick={() => window.dispatchEvent(new CustomEvent("open-issue-drawer", { detail: issue.id }))}
-              className="block text-left"
-            >
-              <h3 className="break-words font-display text-base font-extrabold leading-snug hover:underline">
-                <span className="font-mono text-ink-soft">#{issue.github_issue_id}</span> {issue.title}
-              </h3>
-            </button>
+    <div className="border-[3px] border-ink bg-white shadow-[5px_5px_0_0_#101010] transition-all hover:-translate-x-0.5 hover:-translate-y-0.5 hover:shadow-[7px_7px_0_0_#101010]">
+      <Link
+        to={issueUrl}
+        className="group block p-4 focus-visible:ring-2 focus-visible:ring-gblue focus-visible:outline-none"
+      >
+        {/* Header row: flex flex-wrap items-center gap-x-2 gap-y-1.5 with chips shrink-0 whitespace-nowrap and relative time pushed right */}
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
+          <StatusBadge status={c.status} className="shrink-0 whitespace-nowrap" />
+          <StatusBadge status={c.validation_status} className="shrink-0 whitespace-nowrap" />
+          {issue?.difficulty && (
+            <Badge tone="yellow" className="shrink-0 whitespace-nowrap">
+              +{pointsFor(issue.difficulty)} pts
+            </Badge>
           )}
-          <p className="mt-1.5 font-mono text-[11px] text-ink-soft">
+          <span className="ml-auto font-mono text-[11px] text-ink-soft shrink-0 whitespace-nowrap">
             updated {timeAgo(c.updated_at)}
-            {pr && <> · PR #{pr.github_pr_id} ({pr.status})</>}
+          </span>
+        </div>
+
+        {/* Title below in ONE flowing paragraph with min-w-0 break-words, issue number inline before the title */}
+        <p className="mt-2 min-w-0 break-words font-display text-base font-extrabold leading-snug tracking-tight text-ink group-hover:underline group-hover:decoration-gblue group-hover:decoration-2">
+          {issueNum && <span className="font-mono text-ink-soft mr-1.5">#{issueNum}</span>}
+          {issueTitle}
+        </p>
+
+        {pr && (
+          <p className="mt-1.5 font-mono text-[11px] text-ink-soft">
+            PR #{pr.github_pr_id || pr.number || pr.id} ({pr.status})
           </p>
-        </div>
-        <div className="shrink-0 sm:text-right">
+        )}
+      </Link>
+
+      <div className="border-t-2 border-dashed border-paper-3 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 min-w-0">
+        <div className="min-w-0 flex-1 overflow-x-auto no-scrollbar">
           <StateMachineStrip current={c.status} />
-          {expandable && (c.timeline_json?.length > 0) && (
-            <button
-              onClick={() => setOpen((o) => !o)}
-              className="mt-2 font-mono text-[11px] font-bold uppercase underline decoration-dotted"
-            >
-              {open ? "Hide timeline ▲" : "View timeline ▼"}
-            </button>
-          )}
         </div>
+        {expandable && Array.isArray(c.timeline_json) && c.timeline_json.length > 0 && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setOpen((o) => !o);
+            }}
+            className="shrink-0 font-mono text-[11px] font-bold uppercase underline decoration-dotted hover:text-gblue"
+          >
+            {open ? "Hide timeline ▲" : "View timeline ▼"}
+          </button>
+        )}
       </div>
+
       {open && (
         <div className="border-t-[3px] border-ink bg-paper-2/40 p-4">
           <Timeline events={c.timeline_json} />
         </div>
       )}
-    </Panel>
+    </div>
   );
 }
 

@@ -15,6 +15,7 @@ import {
 } from "@/components/ui";
 import { BarChart, ContributionCard, IssueCard, PRCard } from "@/components/domain";
 import { useDrawers } from "@/components/drawers";
+import { dedupeByIssue, computeContributionCounts } from "@/lib/contributions";
 
 export default function StudentDashboard() {
   const { user } = useAuth();
@@ -39,8 +40,16 @@ export default function StudentDashboard() {
   const myClaimedIssues = (myIssues.data?.items || []).filter(
     (i) => i.active_claim && user && i.active_claim.user_id === user.id,
   );
-  const inReview = (contribs.data?.items || []).filter((c) =>
-    ["pr_submitted", "under_review", "changes_requested", "accepted"].includes(c.status),
+  const dedupedContribs = useMemo(
+    () => dedupeByIssue(contribs.data?.items || []),
+    [contribs.data?.items],
+  );
+  const inReview = useMemo(
+    () =>
+      dedupedContribs.filter((c) =>
+        ["pr_submitted", "under_review", "changes_requested", "accepted"].includes(c.status),
+      ),
+    [dedupedContribs],
   );
 
   return (
@@ -226,38 +235,57 @@ const TABS = [
 
 function ContributionsTab({ q }) {
   const [filter, setFilter] = useState("all");
-  const items = q.data?.items || [];
+  const rawItems = q.data?.items || [];
+  const deduped = useMemo(() => dedupeByIssue(rawItems), [rawItems]);
+  const { total, valid, merged, inProgress, statusCounts } = useMemo(
+    () => computeContributionCounts(deduped),
+    [deduped],
+  );
 
-  const counts = useMemo(() => {
-    const c = { all: items.length };
-    items.forEach((x) => (c[x.status] = (c[x.status] ?? 0) + 1));
-    return c;
-  }, [items]);
-
-  const filtered = items.filter((c) => filter === "all" || c.status === filter);
+  const filtered = useMemo(
+    () => deduped.filter((c) => filter === "all" || c.status === filter),
+    [deduped, filter],
+  );
 
   return (
     <>
       <div className="mb-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <StatCard label="Total claims" value={counts.all ?? 0} tone="blue" />
-        <StatCard label="Merged" value={counts.merged ?? 0} tone="green" />
-        <StatCard label="Needs your action" value={(counts.changes_requested ?? 0) + (counts.in_progress ?? 0)} sub="reviews or work pending" tone="red" />
-        <StatCard label="Valid" value={q.data?.valid_contributions_count ?? 0} sub={`of ${q.data?.total_contributions ?? 0} total`} tone="yellow" />
+        <StatCard label="Total contributions" value={total} tone="blue" />
+        <StatCard label="Merged" value={merged} tone="green" />
+        <StatCard label="In progress" value={inProgress} sub="work or review pending" tone="red" />
+        <StatCard label="Valid" value={valid} sub={`of ${total} total`} tone="yellow" />
       </div>
 
-      <div className="no-scrollbar mb-5 flex gap-2 overflow-x-auto border-b-[3px] border-ink pb-2">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            onClick={() => setFilter(t.key)}
-            className={`whitespace-nowrap border-2 border-ink px-3.5 py-1.5 font-display text-xs font-bold uppercase tracking-wide ${
-              filter === t.key ? "bg-ink text-gyellow shadow-[3px_3px_0_0_#101010]" : "bg-white hover:bg-gyellow-light"
-            }`}
-          >
-            {statusLabel(t.key)}
-            {counts[t.key] ? <span className="ml-1.5 font-mono opacity-70">({counts[t.key]})</span> : null}
-          </button>
-        ))}
+      <div className="min-w-0 mb-5">
+        <div
+          role="tablist"
+          aria-label="Contribution status tabs"
+          className="no-scrollbar flex gap-2 overflow-x-auto border-b-[3px] border-ink pb-2 scroll-smooth snap-x snap-mandatory"
+        >
+          {TABS.map((t) => {
+            const count = statusCounts[t.key] ?? 0;
+            const isSelected = filter === t.key;
+            return (
+              <button
+                key={t.key}
+                role="tab"
+                id={`tab-${t.key}`}
+                aria-selected={isSelected}
+                aria-controls={`tabpanel-${t.key}`}
+                tabIndex={isSelected ? 0 : -1}
+                onClick={() => setFilter(t.key)}
+                className={`shrink-0 whitespace-nowrap snap-start border-2 border-ink px-3.5 py-1.5 font-display text-xs font-bold uppercase tracking-wide transition-all focus-visible:ring-2 focus-visible:ring-gblue focus-visible:outline-none ${
+                  isSelected
+                    ? "bg-ink text-gyellow shadow-[3px_3px_0_0_#101010]"
+                    : "bg-white hover:bg-gyellow-light"
+                }`}
+              >
+                {statusLabel(t.key)}
+                {count > 0 ? <span className="ml-1.5 font-mono opacity-70">({count})</span> : null}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {q.loading && <LoadingBlock label="Loading your timeline" rows={4} />}
@@ -265,11 +293,20 @@ function ContributionsTab({ q }) {
       {q.data && filtered.length === 0 && (
         <EmptyState
           title={filter === "all" ? "No contributions yet" : `Nothing in "${statusLabel(filter)}"`}
-          body="Claim an issue from the explorer to start your timeline. It fills in automatically as webhooks arrive."
+          body={
+            filter === "all"
+              ? "Claim an issue from the explorer to start your timeline. It fills in automatically as webhooks arrive."
+              : `There are currently no active contributions with status "${statusLabel(filter)}".`
+          }
           action={<LinkButton to="/dashboard/issues" variant="green">Browse open issues</LinkButton>}
         />
       )}
-      <div className="min-w-0 space-y-4">
+      <div
+        role="tabpanel"
+        id={`tabpanel-${filter}`}
+        aria-labelledby={`tab-${filter}`}
+        className="min-w-0 space-y-4"
+      >
         {filtered.map((c) => <ContributionCard key={c.id} c={c} />)}
       </div>
     </>

@@ -19,6 +19,7 @@ import {
   LoadingBlock, Panel, SectionHeading, StatCard, StatusBadge,
 } from "@/components/ui";
 import { ContributionCard } from "@/components/domain";
+import { dedupeByIssue, computeContributionCounts } from "@/lib/contributions";
 
 export default function Profile() {
   const { userId } = useParams();
@@ -68,7 +69,9 @@ export default function Profile() {
     );
 
   const p = q.data;
-  const contributions = contribs.data?.items || [];
+  const rawContributions = contribs.data?.items || [];
+  const contributions = dedupeByIssue(rawContributions);
+  const timelineCounts = computeContributionCounts(contributions);
   const mergedCount = p.merged_prs_count ?? 0;
 
   return (
@@ -185,10 +188,10 @@ export default function Profile() {
               <>
                 <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
                   {[
-                    ["Total", contribs.data.total_contributions],
-                    ["Valid", contribs.data.valid_contributions_count],
-                    ["Merged", contribs.data.merged_count],
-                    ["In progress", contribs.data.in_progress_count],
+                    ["Total", timelineCounts.total],
+                    ["Valid", timelineCounts.valid],
+                    ["Merged", timelineCounts.merged],
+                    ["In progress", timelineCounts.inProgress],
                   ].map(([l, v]) => (
                     <div key={l} className="border-2 border-ink bg-paper-2/50 p-3">
                       <p className="font-display text-2xl font-extrabold leading-none">{v}</p>
