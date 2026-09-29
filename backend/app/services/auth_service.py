@@ -310,7 +310,7 @@ def authenticate_user(db: Session, identifier: str, password: Optional[str] = No
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid roll number or password."
             )
-    elif settings.ENV != "development" and user.role in (UserRole.ADMIN, UserRole.MAINTAINER):
+    elif settings.ENV not in ("development", "test") and user.role in (UserRole.ADMIN, UserRole.MAINTAINER):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Staff accounts require a password in production. Please set an account password."
