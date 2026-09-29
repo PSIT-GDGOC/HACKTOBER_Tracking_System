@@ -7,7 +7,8 @@ import { Link } from "react-router-dom";
 import { api, pointsFor, qs } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useData } from "@/lib/hooks";
-import { compact, fullDate, statusLabel, timeAgo } from "@/lib/format";
+import { compact, fullDate, statusLabel } from "@/lib/format";
+import { RelativeTime } from "@/components/RelativeTime";
 import { PageHeader, UpdatedPill } from "@/components/Layout";
 import {
   Avatar, Badge, Button, Callout, EmptyState, ErrorState, LinkButton,
@@ -121,7 +122,7 @@ function OverviewTab({ d, inReview }) {
                       <span className="font-mono text-ink-soft">#{c.issue_id}</span> {c.issue_title}
                     </p>
                     <p className="font-mono text-[10px] uppercase tracking-wider text-ink-soft">
-                      {c.repo_name} · {c.difficulty} · +{pointsFor(c.difficulty)} pts · claimed {timeAgo(c.claimed_at)}
+                      {c.repo_name} · {c.difficulty} · +{pointsFor(c.difficulty)} pts · claimed <RelativeTime date={c.claimed_at} />
                     </p>
                   </div>
                   <StatusBadge status="active" />

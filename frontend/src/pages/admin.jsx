@@ -10,7 +10,8 @@
 import { useState } from "react";
 import { api } from "@/lib/api";
 import { useData, useMutation } from "@/lib/hooks";
-import { compact, fullDate, statusLabel, timeAgo } from "@/lib/format";
+import { compact, fullDate, statusLabel } from "@/lib/format";
+import { RelativeTime } from "@/components/RelativeTime";
 import { PageHeader, UpdatedPill } from "@/components/Layout";
 import {
   Avatar, Badge, Button, Callout, EmptyState, ErrorState, Field, Input, LinkButton,
@@ -228,7 +229,7 @@ function ParticipantsTab() {
                   <div className="mt-1.5 flex flex-wrap gap-1.5">
                     <Badge tone={s.id_card_image_url ? "green" : "red"}>ID {s.id_card_image_url ? "uploaded" : "missing"}</Badge>
                     {s.portal_snapshot_json && <Badge tone="blue" dot>portal data</Badge>}
-                    <span className="font-mono text-[10px] text-ink-soft">joined {timeAgo(s.created_at)}</span>
+                    <span className="font-mono text-[10px] text-ink-soft">joined <RelativeTime date={s.created_at} /></span>
                   </div>
                   {s.portal_snapshot_json && (
                     <p className="mt-2 font-mono text-[10px] text-ink-soft">
@@ -395,7 +396,7 @@ function ModerationTab() {
                 </p>
                 <p className="mt-1 font-mono text-[11px] text-ink-soft">
                   {c.user ? `${c.user.name} (${c.user.psit_roll_no})` : `user #${c.user_id}`}
-                  {" · "}{timeAgo(c.updated_at)}
+                  {" · "}<RelativeTime date={c.updated_at} />
                   {c.timeline_json?.length ? ` · ${c.timeline_json.length} timeline events` : ""}
                 </p>
               </div>

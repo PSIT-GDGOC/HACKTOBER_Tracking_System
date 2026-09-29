@@ -7,6 +7,7 @@ import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useData } from "@/lib/hooks";
 import { statusLabel, timeAgo } from "@/lib/format";
+import { RelativeTime } from "@/components/RelativeTime";
 import { PageHeader, UpdatedPill } from "@/components/Layout";
 import {
   EmptyState, ErrorState, LoadingBlock, Panel, SectionHeading, StatCard,
@@ -102,7 +103,9 @@ function QueueTab({ d }) {
                 <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[11px]">
                   <span className="font-bold">{item.contributor_name}</span>
                   {item.github_username && <span className="text-ink-soft">@{item.github_username}</span>}
-                  <span className="text-ink-soft">submitted {timeAgo(item.created_at)}</span>
+                  <span className="text-ink-soft">
+                    submitted <RelativeTime date={item.created_at} />
+                  </span>
                   {item.contributor_roll_no && <span className="text-ink-soft">{item.contributor_roll_no}</span>}
                 </div>
               </div>
@@ -140,7 +143,7 @@ function ReviewModal({ active, onClose, note, setNote, onDone }) {
         <div className="border-[3px] border-ink bg-paper-2/50 p-3">
           <p className="font-display text-sm font-extrabold">{active.title}</p>
           <p className="mt-1 font-mono text-[11px] text-ink-soft">
-            {active.contributor_name} · {active.repo_name} · submitted {timeAgo(active.created_at)}
+            {active.contributor_name} · {active.repo_name} · submitted <RelativeTime date={active.created_at} />
           </p>
         </div>
         <Callout tone="blue" title="Reviews come from GitHub">
@@ -189,7 +192,7 @@ function HistoryTab({ d }) {
               </button>
               {r.comment && <p className="mt-1 text-sm text-ink-soft">“{r.comment}”</p>}
               <p className="mt-1 font-mono text-[11px] text-ink-soft">
-                reviewed {timeAgo(r.reviewed_at)}
+                reviewed <RelativeTime date={r.reviewed_at} />
               </p>
             </div>
           </div>

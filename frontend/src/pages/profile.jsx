@@ -12,7 +12,7 @@ import { useParams } from "react-router-dom";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useData, useMutation } from "@/lib/hooks";
-import { compact, fullDate, statusLabel, timeAgo } from "@/lib/format";
+import { compact, fullDate } from "@/lib/format";
 import { PageHeader, UpdatedPill } from "@/components/Layout";
 import {
   Avatar, Badge, Button, EmptyState, ErrorState, Field, Input, LinkButton,

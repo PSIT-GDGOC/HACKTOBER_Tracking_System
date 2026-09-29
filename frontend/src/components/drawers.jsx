@@ -9,6 +9,7 @@ import { api, githubIssueUrl, githubPrUrl, pointsFor } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useData, useMutation } from "@/lib/hooks";
 import { fullDate, statusLabel, timeAgo } from "@/lib/format";
+import { RelativeTime } from "./RelativeTime";
 import { cn } from "@/utils/cn";
 import { Badge, Button, Drawer, EmptyState, LoadingBlock, Panel, StatusBadge } from "./ui";
 
@@ -102,8 +103,8 @@ export function IssueDrawer({ issueId, onClose, onOpenPr }) {
           <h2 className="font-display text-xl font-extrabold leading-tight tracking-tight">{issue.title}</h2>
 
           <div className="flex flex-wrap items-center gap-x-4 gap-y-1 font-mono text-[11px] text-ink-soft">
-            <span>opened {timeAgo(issue.created_at)}</span>
-            <span>updated {timeAgo(issue.updated_at)}</span>
+            <span>opened <RelativeTime date={issue.created_at} /></span>
+            <span>updated <RelativeTime date={issue.updated_at} /></span>
             {issue.repository && (
               <a
                 href={githubIssueUrl(issue.repository, issue) ?? issue.repository.github_repo_url}
@@ -159,7 +160,9 @@ export function IssueDrawer({ issueId, onClose, onOpenPr }) {
                   {issue.active_claim.user?.github_username && (
                     <span className="font-mono text-[10px] text-ink-soft">@{issue.active_claim.user.github_username}</span>
                   )}
-                  <span className="font-mono text-[10px] text-ink-soft">{timeAgo(issue.active_claim.claimed_at)}</span>
+                  <span className="font-mono text-[10px] text-ink-soft">
+                    <RelativeTime date={issue.active_claim.claimed_at} />
+                  </span>
                 </div>
                 {(isMine || canModerate) && (
                   <Button variant="red" size="sm" onClick={doRelease} loading={unclaim.pending}>
@@ -196,7 +199,9 @@ export function PRDrawer({ prId, onClose, onOpenIssue }) {
           <div className="flex flex-wrap items-center gap-1.5">
             <StatusBadge status={pr.status} />
             {pr.repository && <Badge tone="paper">{pr.repository.name}</Badge>}
-            <span className="font-mono text-[10px] text-ink-soft">{timeAgo(pr.created_at)}</span>
+            <span className="font-mono text-[10px] text-ink-soft">
+              <RelativeTime date={pr.created_at} />
+            </span>
           </div>
 
           <h2 className="font-display text-xl font-extrabold leading-tight tracking-tight">{pr.title}</h2>

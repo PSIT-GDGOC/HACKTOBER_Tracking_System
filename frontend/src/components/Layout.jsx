@@ -49,6 +49,7 @@ function RepoSwitcher() {
 import { useAuth } from "@/lib/auth";
 import { useData, useDebounced } from "@/lib/hooks";
 import { timeAgo } from "@/lib/format";
+import { RelativeTime } from "./RelativeTime";
 import { Avatar, Badge, Button, Field, GdgMark, Input, Modal, Panel, StatusBadge, Sticker, Toggle } from "./ui";
 import { NotificationRow } from "./domain";
 
@@ -487,7 +488,7 @@ export function UpdatedPill({ lastUpdated }) {
   return (
     <span className="inline-flex items-center gap-1.5 font-mono text-[10px] font-bold uppercase tracking-wider text-ink-soft">
       <span className="h-2 w-2 animate-pulse rounded-full bg-ggreen" />
-      synced {timeAgo(new Date(lastUpdated).toISOString())}
+      <RelativeTime date={new Date(lastUpdated).toISOString()} prefix="synced " />
     </span>
   );
 }

@@ -10,6 +10,7 @@ import { routes } from "@/lib/routes";
 import {
   Avatar, Badge, Button, Chip, Panel, ProgressBar, Skeleton, StatusBadge,
 } from "./ui";
+import { RelativeTime } from "./RelativeTime";
 
 /* ------------------------------------------------------------------ */
 /*  FilterBar                                                          */
@@ -121,7 +122,9 @@ export function IssueCard({ issue, onClaim, pending, compact }) {
 
       {!compact && (
         <div className="mt-3 flex flex-wrap items-center gap-1.5">
-          <span className="font-mono text-[11px] text-ink-soft">updated {timeAgo(issue.updated_at)}</span>
+          <span className="font-mono text-[11px] text-ink-soft">
+            <RelativeTime date={issue.updated_at} prefix="updated " />
+          </span>
         </div>
       )}
 
@@ -225,7 +228,9 @@ export function PRCard({ pr, showContributor = true }) {
             ) : (
               <span className="text-ink-soft">GitHub Contributor</span>
             )}
-            <span className="text-ink-soft">updated {timeAgo(pr.updated_at)}</span>
+            <span className="text-ink-soft">
+              <RelativeTime date={pr.updated_at} prefix="updated " />
+            </span>
           </div>
         </div>
         {showContributor && pr.user && (
@@ -305,7 +310,9 @@ export function CommitRow({ commit }) {
             PR #{commit.pr_id}
           </span>
         )}
-        <span className="text-ink-soft">{timeAgo(commit.committed_at)}</span>
+        <span className="text-ink-soft">
+          <RelativeTime date={commit.committed_at} />
+        </span>
       </div>
     </div>
   );
@@ -335,7 +342,9 @@ export function Timeline({ events }) {
           />
           <div className="flex flex-wrap items-center gap-2">
             <p className="font-display text-sm font-extrabold uppercase tracking-tight">{statusLabel(e.status)}</p>
-            <span className="font-mono text-[10px] text-ink-soft">{timeAgo(e.timestamp)}</span>
+            <span className="font-mono text-[10px] text-ink-soft">
+              <RelativeTime date={e.timestamp} />
+            </span>
           </div>
           {e.detail && <p className="mt-0.5 text-sm text-ink-soft">{e.detail}</p>}
           <p className="mt-1 font-mono text-[10px] uppercase tracking-wider text-ink-soft/70">
@@ -399,7 +408,7 @@ export function ContributionCard({ c, expandable = true }) {
             </Badge>
           )}
           <span className="ml-auto font-mono text-[11px] text-ink-soft shrink-0 whitespace-nowrap">
-            updated {timeAgo(c.updated_at)}
+            <RelativeTime date={c.updated_at} prefix="updated " />
           </span>
         </div>
 
@@ -465,7 +474,7 @@ export function ActivityRow({ item }) {
           <p className="mt-0.5 truncate font-display text-xs font-bold">{item.target.title}</p>
         )}
         <p className="mt-0.5 font-mono text-[10px] uppercase tracking-wider text-ink-soft">
-          {item.type?.replace(/_/g, " ")} · {timeAgo(item.created_at)}
+          {item.type?.replace(/_/g, " ")} · <RelativeTime date={item.created_at} />
         </p>
       </div>
     </div>
@@ -487,7 +496,7 @@ export function NotificationRow({ n, onRead }) {
         <p className="font-display text-sm font-extrabold">{p.title || statusLabel(n.type)}</p>
         <p className="mt-0.5 text-sm text-ink-soft">{p.message || p.detail || ""}</p>
         <p className="mt-1.5 font-mono text-[10px] uppercase tracking-wider text-ink-soft">
-          {String(n.type).replace(/_/g, " ")} · {timeAgo(n.created_at)}
+          {String(n.type).replace(/_/g, " ")} · <RelativeTime date={n.created_at} />
         </p>
       </div>
       {!n.read && (
