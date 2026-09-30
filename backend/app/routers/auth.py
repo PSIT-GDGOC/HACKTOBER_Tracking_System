@@ -12,6 +12,7 @@ Endpoints:
 - POST /auth/github/link         — Manually link a GitHub username (fallback / dev use)
 """
 import base64
+import logging
 import secrets
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
@@ -75,6 +76,7 @@ from app.services.email_service import (
 )
 
 router = APIRouter(prefix="/auth", tags=["Auth & Verification"])
+logger = logging.getLogger(__name__)
 
 
 # ──────────────────────────────────────────────────────────────────────
