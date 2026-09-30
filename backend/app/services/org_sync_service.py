@@ -109,8 +109,11 @@ def _upsert_repo(db: Session, repo_data: Dict[str, Any], old_name: Optional[str]
 
     if existing:
         # Update mutable fields (handles rename, URL change, platform re-detection)
+        # pyrefly: ignore [read-only]
         existing.name = name
+        # pyrefly: ignore [read-only]
         existing.github_repo_url = html_url
+        # pyrefly: ignore [read-only]
         existing.platform = platform
         db.commit()
         db.refresh(existing)
