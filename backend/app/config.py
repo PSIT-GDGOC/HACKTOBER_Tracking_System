@@ -1,4 +1,5 @@
 from pydantic_settings import BaseSettings, SettingsConfigDict
+import re
 
 
 class Settings(BaseSettings):
@@ -6,11 +7,11 @@ class Settings(BaseSettings):
     ENV: str = "development"
     DEBUG: bool = False  # Default False; only True in local dev via .env
 
-    # Database — Neon PostgreSQL (PgBouncer pooled endpoint for fast serverless connections)
-    DATABASE_URL: str = "postgresql://neondb_owner:npg_B9MbHqGiwd3e@ep-falling-flower-b54gens1-pooler.c-7.us-east-2.aws.neon.tech/neondb?sslmode=require"
+    # Database — configured via DATABASE_URL environment variable (defaults to local SQLite in dev/CI)
+    DATABASE_URL: str = "sqlite:///./local_dev.db"
 
-    # Security & Auth
-    SECRET_KEY: str = "9f83b2a8d4e5c6b7a8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1"
+    # Security & Auth — override SECRET_KEY in production via environment variable
+    SECRET_KEY: str = "dev-only-secret-key-change-in-production-via-env"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
 
@@ -25,12 +26,12 @@ class Settings(BaseSettings):
     GITHUB_CLIENT_SECRET: str = ""
     GITHUB_OAUTH_REDIRECT_URI: str = "https://hacktober-tracking-system-ocai.vercel.app/#/auth/callback"
 
-    # Email / SMTP Settings (Gmail App Password fallback)
+    # Email / SMTP Settings (loaded from .env / environment variables)
     SMTP_HOST: str = "smtp.gmail.com"
     SMTP_PORT: int = 587
-    SMTP_USER: str = "2k24.cs1b.2412161@gmail.com"
-    SMTP_PASSWORD: str = "azlbawzagppattsf"
-    SMTP_FROM: str = "GDG On Campus PSIT <2k24.cs1b.2412161@gmail.com>"
+    SMTP_USER: str = ""
+    SMTP_PASSWORD: str = ""
+    SMTP_FROM: str = ""
 
     # Resend Email Integration
     RESEND_API_KEY: str = ""
@@ -69,15 +70,12 @@ class Settings(BaseSettings):
 
     @property
     def db_url(self) -> str:
-        """Return SQLAlchemy-compatible URL. Ensures Neon endpoints use the PgBouncer pooler."""
+        """Return SQLAlchemy-compatible URL. Automatically upgrades direct Neon endpoints to PgBouncer pooler."""
         url = self.DATABASE_URL
         if url.startswith("postgres://"):
             url = url.replace("postgres://", "postgresql://", 1)
-        if "ep-falling-flower-b54gens1.c-7.us-east-2.aws.neon.tech" in url:
-            url = url.replace(
-                "ep-falling-flower-b54gens1.c-7.us-east-2.aws.neon.tech",
-                "ep-falling-flower-b54gens1-pooler.c-7.us-east-2.aws.neon.tech",
-            )
+        if ".aws.neon.tech" in url and "-pooler." not in url:
+            url = re.sub(r"(@ep-[a-z0-9-]+)(\.)", r"\1-pooler\2", url, count=1)
         return url
 
     @property
