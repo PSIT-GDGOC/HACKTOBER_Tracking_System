@@ -2,8 +2,8 @@
  * Student Dashboard — tabs: Overview / My Issues / My Contributions.
  * Data: GET /dashboard/student, GET /contributions/my, issues filtered by active claim.
  */
-import { Suspense, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import { api, pointsFor, qs } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useData } from "@/lib/hooks";
@@ -19,10 +19,28 @@ import { BarChart, ContributionCard, IssueCard, PRCard } from "@/components/doma
 import { useDrawers } from "@/components/drawers";
 import { dedupeByIssue, computeContributionCounts } from "@/lib/contributions";
 
+const VALID_DASH_TABS = ["overview", "my-issues", "contributions"];
+
 export function StudentDashboardContent() {
   const { user } = useAuth();
-  const [tab, setTab] = useState("overview");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const urlTab = searchParams.get("tab");
+  const [tab, setTabState] = useState(VALID_DASH_TABS.includes(urlTab) ? urlTab : "overview");
   const drawers = useDrawers();
+
+  useEffect(() => {
+    if (urlTab && VALID_DASH_TABS.includes(urlTab) && urlTab !== tab) {
+      setTabState(urlTab);
+    }
+  }, [urlTab, tab]);
+
+  const setTab = (nextTab) => {
+    setTabState(nextTab);
+    const nextParams = new URLSearchParams(searchParams);
+    if (nextTab === "overview") nextParams.delete("tab");
+    else nextParams.set("tab", nextTab);
+    setSearchParams(nextParams, { replace: true });
+  };
 
   const dash = useData(() => api.studentDashboard(), [], { pollMs: 60000 });
   const contribs = useData(() => api.myContributions(), [tab === "contributions"], { enabled: tab === "contributions" });
@@ -70,7 +88,7 @@ export function StudentDashboardContent() {
         onChange={setTab}
         tabs={[
           { key: "overview", label: "Overview" },
-          { key: "my-issues", label: "My issues", count: tab === "my-issues" ? myClaimedIssues.length : undefined },
+          { key: "my-issues", label: "My issues", count: tab === "my-issues" ? myClaimedIssues.length : d.active_claims_count },
           { key: "contributions", label: "My contributions", count: contribs.data?.total_contributions },
         ]}
       />
@@ -105,7 +123,7 @@ function OverviewTab({ d, inReview }) {
     <div className="grid gap-6 lg:grid-cols-[1.4fr_1fr]">
       <div className="min-w-0 space-y-6">
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <StatCard label="Active claims" value={d.active_claims_count} sub="locked to you" tone="blue" to={routes.issues({ status: "claimed" })} />
+          <StatCard label="Active claims" value={d.active_claims_count} sub="locked to you" tone="blue" to={routes.studentDashboard("my-issues")} />
           <StatCard label="PRs submitted" value={d.prs_submitted_count} sub={`${d.prs_merged_count} merged`} tone="green" to={routes.pullRequests()} />
           <StatCard label="Valid contributions" value={d.valid_contributions_count} sub="counted on the leaderboard" tone="yellow" to={routes.profile(undefined, "merged")} />
           <StatCard label="GitHub" value={d.github_username ? `@${d.github_username}` : "not linked"} sub={d.verified ? "verified" : "verification pending"} tone={d.verified ? "purple" : "red"} />

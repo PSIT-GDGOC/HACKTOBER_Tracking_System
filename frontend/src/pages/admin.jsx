@@ -49,7 +49,7 @@ export default function AdminConsole() {
       />
 
       <div className="mt-6">
-        {tab === "overview" && <OverviewTab d={d} />}
+        {tab === "overview" && <OverviewTab d={d} setTab={setTab} />}
         {tab === "participants" && <ParticipantsTab />}
         {tab === "moderation" && <ModerationTab />}
       </div>
@@ -61,7 +61,7 @@ export default function AdminConsole() {
 /*  Overview                                                           */
 /* ------------------------------------------------------------------ */
 
-function OverviewTab({ d }) {
+function OverviewTab({ d, setTab }) {
   return (
     <div className="grid gap-6 lg:grid-cols-[1.4fr_0.6fr]">
       <div className="min-w-0 space-y-6">
@@ -129,12 +129,12 @@ function OverviewTab({ d }) {
         <Panel className="p-5">
           <SectionHeading title="Needs your action" />
           <div className="space-y-2">
-            <LinkButton to="/dashboard/admin" variant="red" className="w-full">
+            <Button variant="red" className="w-full" onClick={() => setTab("participants")}>
               {d.pending_manual_review_students} pending ID verification
-            </LinkButton>
-            <LinkButton to="/dashboard/admin" variant="yellow" className="w-full">
+            </Button>
+            <Button variant="yellow" className="w-full" onClick={() => setTab("moderation")}>
               {d.pending_validations_count} contributions to validate
-            </LinkButton>
+            </Button>
           </div>
           <p className="mt-3 text-xs leading-relaxed text-ink-soft">
             Open the <b>Participants</b> tab for the manual verification queue, or the

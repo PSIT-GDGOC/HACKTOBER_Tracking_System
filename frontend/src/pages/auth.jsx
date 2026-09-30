@@ -20,7 +20,7 @@ import {
   Badge, Button, Callout, Field, GdgMark, Input, Panel, Sticker,
 } from "@/components/ui";
 
-const STEPS = ["Intro", "Sign up", "ID check", "Result", "GitHub"];
+const STEPS = ["Intro", "Sign up", "ID check", "Password", "GitHub"];
 
 /* ------------------------------------------------------------------ */
 /*  wizard shell                                                       */
@@ -94,23 +94,6 @@ export function AuthWizard() {
   const [step, setStep] = useState(0);
   const [error, setError] = useState(null);
 
-  /* Detect step from state or authenticated user */
-  useEffect(() => {
-    if (location.state?.step !== undefined) {
-      setStep(location.state.step);
-    } else if (user && user.role === "student") {
-      if (user.verified && user.github_username) {
-        setLinked(true);
-        setGithubUsername(user.github_username);
-        setStep(4);
-      } else if (user.verified) {
-        setStep(4);
-      } else {
-        setStep(2);
-      }
-    }
-  }, [user, location.state]);
-
   /* signup form */
   const [form, setForm] = useState({ name: "", email: "", psit_roll_no: "", agree: false });
   const signup = useMutation(api.signup);
@@ -135,37 +118,79 @@ export function AuthWizard() {
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
-  const [passwordSaved, setPasswordSaved] = useState(false);
+  const [passwordSaved, setPasswordSaved] = useState(!!user?.has_password);
   const [passwordError, setPasswordError] = useState(null);
   const [savingPassword, setSavingPassword] = useState(false);
+
+  useEffect(() => {
+    if (user?.has_password) {
+      setPasswordSaved(true);
+    }
+  }, [user?.has_password]);
+
+  /* Detect step from state or authenticated user — never skip Step 3 if password is not set! */
+  useEffect(() => {
+    if (location.state?.step !== undefined) {
+      setStep(location.state.step);
+    } else if (user && user.role === "student") {
+      if (!user.verified) {
+        setStep((prev) => (prev === 3 && verifyResult ? 3 : 2));
+      } else if (!user.has_password && !passwordSaved) {
+        setStep(3);
+      } else {
+        if (user.github_username) {
+          setLinked(true);
+          setGithubUsername(user.github_username);
+        }
+        setStep(4);
+      }
+    }
+  }, [user, location.state, passwordSaved, verifyResult]);
 
   const doSetPassword = async (e) => {
     if (e) e.preventDefault();
     setPasswordError(null);
-    if (password.length < 8) {
+    const cleanPw = password.trim();
+    if (cleanPw.length < 8) {
       setPasswordError("Password must be at least 8 characters long.");
-      return;
+      return false;
     }
-    const hasLetter = /[a-zA-Z]/.test(password);
-    const hasNonLetter = /[^a-zA-Z]/.test(password);
+    const hasLetter = /[a-zA-Z]/.test(cleanPw);
+    const hasNonLetter = /[^a-zA-Z]/.test(cleanPw);
     if (!hasLetter || !hasNonLetter) {
       setPasswordError("Password must include at least one letter and one number or symbol.");
-      return;
+      return false;
     }
-    if (password !== confirmPassword) {
+    if (cleanPw !== confirmPassword.trim()) {
       setPasswordError("Passwords do not match.");
-      return;
+      return false;
     }
     setSavingPassword(true);
     try {
-      await api.setPassword({ password });
+      await api.setPassword({ password: cleanPw });
       setPasswordSaved(true);
       setError(null);
+      await refreshUser().catch(() => {});
+      return true;
     } catch (err) {
       setPasswordError(err?.detail || err?.message || "Failed to set password.");
+      return false;
     } finally {
       setSavingPassword(false);
     }
+  };
+
+  const proceedToGithubStep = async () => {
+    if (passwordSaved || user?.has_password) {
+      setStep(4);
+      return;
+    }
+    if (password.trim()) {
+      const ok = await doSetPassword();
+      if (ok) setStep(4);
+      return;
+    }
+    setPasswordError("Please create and save your account password before continuing to GitHub setup.");
   };
 
   const doSignup = async (e) => {
@@ -227,6 +252,9 @@ export function AuthWizard() {
       if (res) {
         setVerifyResult(res);
         setStep(3);
+        if (res.verified) {
+          await refreshUser().catch(() => {});
+        }
       }
     } catch (err) {
       setUploadPct(0);
@@ -301,9 +329,21 @@ export function AuthWizard() {
 
   const enterDashboard = async () => {
     const updatedUser = await refreshUser().catch(() => null);
-    if (updatedUser?.role === "student" && !updatedUser?.github_username && !linked && !githubUsername.trim()) {
-      setError("Linking your GitHub account is required before entering the dashboard.");
-      return;
+    const activeUser = updatedUser || user;
+    if (activeUser?.role === "student") {
+      if (!activeUser.verified) {
+        setStep(2);
+        return;
+      }
+      if (!activeUser.has_password && !passwordSaved) {
+        setStep(3);
+        setPasswordError("Please create and save your account password before entering the dashboard.");
+        return;
+      }
+      if (!activeUser.github_username && !linked && !githubUsername.trim()) {
+        setError("Linking your GitHub account is required before entering the dashboard.");
+        return;
+      }
     }
     nav("/dashboard");
   };
@@ -604,7 +644,7 @@ export function AuthWizard() {
               )}
 
               <div className="mt-8 border-t-2 border-dashed border-paper-3 pt-5">
-                <Button variant="green" size="lg" className="w-full" onClick={() => setStep(4)}>
+                <Button variant="green" size="lg" className="w-full" loading={savingPassword} onClick={proceedToGithubStep}>
                   Next: Connect GitHub Account →
                 </Button>
               </div>
@@ -760,6 +800,10 @@ export function Login() {
       if (user && user.role === "student") {
         if (!user.verified) {
           nav("/join", { state: { step: 2 } });
+          return;
+        }
+        if (!user.has_password) {
+          nav("/join", { state: { step: 3 } });
           return;
         }
         if (!user.github_username) {

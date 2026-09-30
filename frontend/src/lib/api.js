@@ -140,7 +140,10 @@ export const api = {
     request(`/auth/pending-verifications${qs({ skip: 0, limit: 100, ...params })}`),
   verifyManual: (studentId, body) =>
     request(`/auth/verify-manual/${studentId}`, { method: "POST", body }), // { action, reason? }
-  idCardImageUrl: (studentId) => `${API_BASE_URL}/auth/id-card-image/${studentId}`,
+  idCardImageUrl: (studentId) => {
+    const t = tokenStore.get();
+    return `${API_BASE_URL}/auth/id-card-image/${studentId}${t ? `?token=${encodeURIComponent(t)}` : ""}`;
+  },
   githubLoginUrl: () => request("/auth/github/login"),
   githubCallback: (body) => request("/auth/github/callback", { method: "POST", body }), // { code }
   linkGithub: (body) => request("/auth/github/link", { method: "POST", body }), // { github_username, github_id? }
