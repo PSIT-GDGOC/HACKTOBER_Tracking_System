@@ -191,7 +191,7 @@ export function ProfileContent() {
             <div className="grid grid-cols-2 gap-3">
               <StatCard label="Contributions" value={compact(p.contributions_count ?? contributions.length)} tone="blue" to={isSelf ? routes.profile(undefined, "all") : undefined} />
               <StatCard label="Merged PRs" value={compact(mergedCount)} tone="green" to={isSelf ? routes.profile(undefined, "merged") : undefined} />
-              <StatCard label="Active claims" value={p.active_claims_count ?? 0} tone="yellow" to={isSelf ? routes.issues({ status: "claimed" }) : undefined} />
+              <StatCard label="Active claims" value={p.active_claims_count ?? 0} tone="yellow" to={isSelf ? routes.studentDashboard("my-issues") : undefined} />
               <StatCard label="Role" value={statusLabel(p.role)} tone="purple" />
             </div>
           </Panel>

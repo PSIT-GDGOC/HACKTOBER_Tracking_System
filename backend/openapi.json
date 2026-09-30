@@ -9113,7 +9113,7 @@
             "anyOf": [
               {
                 "type": "string",
-                "maxLength": 6,
+                "maxLength": 12,
                 "minLength": 6
               },
               {

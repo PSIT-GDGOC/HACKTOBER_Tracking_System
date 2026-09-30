@@ -153,7 +153,7 @@ function CommandPalette({ open, onClose }) {
                   key={i}
                   onClick={() =>
                     go(
-                      key === "issues" ? `/dashboard/issues?open=${it.id}`
+                      key === "issues" ? routes.issue(it.id)
                       : key === "pull_requests" ? `/dashboard/pulls?open=${it.id}`
                       : key === "contributors" ? `/dashboard/profile/${it.id}`
                       : key === "repositories" ? `/dashboard/repos/${it.id}`

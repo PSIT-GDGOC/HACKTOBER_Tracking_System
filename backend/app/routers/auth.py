@@ -498,16 +498,26 @@ def manual_verify_student(
 @router.get(
     "/id-card-image/{student_id}",
     summary="Admin-only: Retrieve uploaded ID card photo for manual review",
-    dependencies=[Depends(require_roles(UserRole.ADMIN))],
 )
 def get_student_id_card_image(
     student_id: int,
+    token: Optional[str] = None,
+    authorization: Optional[str] = Header(None, alias="Authorization"),
     db: Session = Depends(get_db),
 ):
     """
     Admin-only: securely serves the stored ID card photo for a student in the
     manual verification queue without exposing raw storage keys or PII publicly.
+    Supports both Bearer Authorization header and ?token= query param for <img> tags.
     """
+    auth_header = authorization or (f"Bearer {token}" if token else None)
+    current_user = get_current_user(authorization=auth_header, db=db)
+    if current_user.role != UserRole.ADMIN:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Access denied. Required role(s): ['admin']. Your role: '{current_user.role.value}'."
+        )
+
     student = db.query(User).filter(User.id == student_id).first()
     if not student:
         raise HTTPException(
