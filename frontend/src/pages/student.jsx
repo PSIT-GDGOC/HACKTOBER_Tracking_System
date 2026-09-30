@@ -46,6 +46,16 @@ export function StudentDashboardContent() {
   const contribs = useData(() => api.myContributions(), [tab === "contributions"], { enabled: tab === "contributions" });
   const myIssues = useData(() => api.issues({ status: "claimed", limit: 100 }), [tab === "my-issues"], { enabled: tab === "my-issues" });
 
+  useEffect(() => {
+    const onIssueUpdated = () => {
+      dash.refetch();
+      contribs.refetch();
+      myIssues.refetch();
+    };
+    window.addEventListener("issue-updated", onIssueUpdated);
+    return () => window.removeEventListener("issue-updated", onIssueUpdated);
+  }, [dash, contribs, myIssues]);
+
   const dedupedContribs = useMemo(
     () => dedupeByIssue(contribs.data?.items || []),
     [contribs.data?.items],

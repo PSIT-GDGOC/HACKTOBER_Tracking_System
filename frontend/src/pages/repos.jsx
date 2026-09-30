@@ -90,6 +90,10 @@ function RepoHub({ repo }) {
   const dash = useData(() => api.repositoryDashboard(repo.id), [repo.id], { pollMs: 60000 });
   const drawers = useDrawers();
 
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState(null);
+  const [issueFilter, setIssueFilter] = useState("all");
+
   const prs = useData(
     () => api.pullRequests({ repo_id: repo.id, limit: 50 }),
     [repo.id, tab === "prs"],
@@ -105,6 +109,30 @@ function RepoHub({ repo }) {
     [repo.id, tab === "overview"],
     { enabled: tab === "overview" },
   );
+
+  useEffect(() => {
+    const onIssueUpdated = () => {
+      dash.refetch();
+      issues.refetch();
+    };
+    window.addEventListener("issue-updated", onIssueUpdated);
+    return () => window.removeEventListener("issue-updated", onIssueUpdated);
+  }, [dash, issues]);
+
+  const handleSync = async () => {
+    setSyncing(true);
+    setSyncMsg(null);
+    try {
+      const res = await api.syncIssues(repo.id);
+      dash.refetch();
+      issues.refetch();
+      setSyncMsg(res?.message ? `${res.message} (${res.synced_count || 0} synced)` : "GitHub issues synced.");
+    } catch (e) {
+      setSyncMsg(e?.detail || e?.message || "Sync failed.");
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   // Gracefully fallback so the page never blocks on a dashboard stats error
   const d = dash.data || {
@@ -126,6 +154,23 @@ function RepoHub({ repo }) {
 
       {d && (
         <>
+          <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+            {syncMsg && (
+              <div className="border-2 border-ink bg-gyellow-light px-3 py-1.5 font-mono text-xs font-bold">
+                {syncMsg}
+              </div>
+            )}
+            <div className="ml-auto flex items-center gap-2">
+              <button
+                onClick={handleSync}
+                disabled={syncing}
+                className="border-2 border-ink bg-gyellow px-3 py-1.5 font-mono text-xs font-bold uppercase shadow-[2px_2px_0_0_#101010] hover:-translate-y-0.5 disabled:opacity-50"
+              >
+                {syncing ? "Syncing..." : "Sync from GitHub ↻"}
+              </button>
+            </div>
+          </div>
+
           <div className="mb-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <StatCard label="Open issues" value={d.open_issues} sub={`${d.total_issues} synced total`} tone="blue" />
             <StatCard label="Pull requests" value={d.total_prs} sub={`${d.merged_prs} merged · ${d.open_prs} open`} tone="red" />
@@ -174,34 +219,56 @@ function RepoHub({ repo }) {
                     <SectionHeading
                       title="Issues in this repo"
                       action={
-                        <Link to="/dashboard/issues" className="font-mono text-[11px] font-bold uppercase underline">explorer →</Link>
+                        <Link to={`/dashboard/issues?repo_id=${repo.id}`} className="font-mono text-[11px] font-bold uppercase underline">explorer →</Link>
                       }
                     />
-                    {issues.loading && <LoadingBlock rows={3} label="Checking for issues..." />}
-                    {!issues.loading && (issues.data?.items || []).length > 0 && (
-                      <div className="space-y-2">
-                        {issues.data.items.slice(0, 8).map((i) => (
-                          <Link
-                            key={i.id}
-                            to={routes.issue(i.id)}
-                            className="flex w-full items-center justify-between gap-3 border-b-2 border-dashed border-paper-3 py-2 text-left last:border-0 hover:bg-gyellow-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gblue"
-                          >
-                            <span className="min-w-0 truncate text-sm font-bold">
-                              <span className="font-mono text-ink-soft">#{i.github_issue_id}</span> {i.title}
-                            </span>
-                            <StatusBadge status={i.status} />
-                          </Link>
-                        ))}
-                      </div>
-                    )}
-                    {!issues.loading && (issues.data?.items || []).length === 0 && (
-                      <div className="border-2 border-dashed border-paper-3 py-6 text-center">
-                        <p className="font-display text-base font-bold">No issues in this repository yet</p>
-                        <p className="mt-1 font-mono text-xs text-ink-soft">
-                          Issues created by the maintainer on GitHub will appear here automatically.
-                        </p>
-                      </div>
-                    )}
+                    <div className="mb-3 flex items-center gap-1.5 font-mono text-[10px] font-bold">
+                      {["all", "open", "closed"].map((f) => (
+                        <button
+                          key={f}
+                          onClick={() => setIssueFilter(f)}
+                          className={`border-2 border-ink px-2.5 py-0.5 uppercase transition-transform ${
+                            issueFilter === f ? "bg-ink text-paper" : "bg-paper-2 hover:bg-paper-3"
+                          }`}
+                        >
+                          {f}
+                        </button>
+                      ))}
+                    </div>
+                    {(() => {
+                      const list = (issues.data?.items || []).filter((i) => {
+                        if (issueFilter === "open") return i.status === "open" || i.status === "claimed" || i.status === "in_progress";
+                        if (issueFilter === "closed") return i.status === "closed";
+                        return true;
+                      });
+                      if (issues.loading) return <LoadingBlock rows={3} label="Checking for issues..." />;
+                      if (list.length === 0) {
+                        return (
+                          <div className="border-2 border-dashed border-paper-3 py-6 text-center">
+                            <p className="font-display text-base font-bold">No {issueFilter !== "all" ? issueFilter : ""} issues found</p>
+                            <p className="mt-1 font-mono text-xs text-ink-soft">
+                              Issues created or closed on GitHub will sync automatically.
+                            </p>
+                          </div>
+                        );
+                      }
+                      return (
+                        <div className="space-y-2">
+                          {list.slice(0, 10).map((i) => (
+                            <Link
+                              key={i.id}
+                              to={routes.issue(i.id)}
+                              className="flex w-full items-center justify-between gap-3 border-b-2 border-dashed border-paper-3 py-2 text-left last:border-0 hover:bg-gyellow-light focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-gblue"
+                            >
+                              <span className="min-w-0 truncate text-sm font-bold">
+                                <span className="font-mono text-ink-soft">#{i.github_issue_id}</span> {i.title}
+                              </span>
+                              <StatusBadge status={i.status} />
+                            </Link>
+                          ))}
+                        </div>
+                      );
+                    })()}
                   </Panel>
                 </div>
               )}

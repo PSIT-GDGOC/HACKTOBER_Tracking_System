@@ -157,6 +157,7 @@ export const api = {
   issues: (params = {}) =>
     request(`/issues${qs({ skip: 0, limit: 50, ...params })}`),
   issue: (id) => request(`/issues/${id}`),
+  updateIssue: (id, body) => request(`/issues/${id}`, { method: "PATCH", body }),
   claimIssue: (id) => request(`/issues/${id}/claim`, { method: "POST", body: {} }),
   unclaimIssue: (id) => request(`/issues/${id}/unclaim`, { method: "POST", body: {} }),
 

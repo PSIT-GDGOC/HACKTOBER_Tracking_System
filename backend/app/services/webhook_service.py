@@ -216,6 +216,8 @@ def _handle_issues_event(payload: Dict[str, Any], repo: Optional[Repository], db
         repo = _get_or_create_repo_from_payload(payload, db)
 
     issue = db.query(Issue).filter(Issue.github_issue_id == gh_issue_id).first()
+    if not repo and issue:
+        repo = db.query(Repository).filter(Repository.id == issue.repo_id).first()
 
     if action == "deleted" and issue:
         db.delete(issue)
@@ -238,7 +240,7 @@ def _handle_issues_event(payload: Dict[str, Any], repo: Optional[Repository], db
                 except Exception as e:
                     logger.warning("Error auto-creating repo for issue webhook: %s", e)
 
-    if not repo:
+    if not repo and not issue:
         logger.error(
             "Cannot process issue #%s: Repository '%s' could not be resolved or created in DB",
             gh_issue_id, payload.get("repository", {}).get("name")
@@ -250,7 +252,7 @@ def _handle_issues_event(payload: Dict[str, Any], repo: Optional[Repository], db
             "detail": f"Repository '{payload.get('repository', {}).get('name')}' not registered in platform DB."
         }
 
-    if not issue:
+    if not issue and repo:
         issue = Issue(
             repo_id=repo.id,
             github_issue_id=gh_issue_id,
@@ -273,79 +275,14 @@ def _handle_issues_event(payload: Dict[str, Any], repo: Optional[Repository], db
             issue.category = category
 
     if issue:
-        if action == "closed":
-            issue.status = IssueStatus.CLOSED
-            state_reason = (issue_data.get("state_reason") or "completed").lower()
-            now = datetime.now(timezone.utc)
-
-            # Find active claims on this issue
-            active_claims = (
-                db.query(Claim)
-                .filter(Claim.issue_id == issue.id, Claim.status == ClaimStatus.ACTIVE)
-                .all()
-            )
-
-            for claim in active_claims:
-                if state_reason == "not_planned":
-                    claim.status = ClaimStatus.EXPIRED
-                    contrib = (
-                        db.query(Contribution)
-                        .filter(Contribution.issue_id == issue.id, Contribution.user_id == claim.user_id)
-                        .order_by(Contribution.created_at.desc())
-                        .first()
-                    )
-                    if contrib:
-                        timeline = list(contrib.timeline_json or [])
-                        timeline.append({
-                            "status": "released",
-                            "timestamp": now.isoformat(),
-                            "detail": f"Issue #{issue.github_issue_id} marked as not planned on GitHub."
-                        })
-                        contrib.timeline_json = timeline
-                else:
-                    # Default / "completed"
-                    claim.status = ClaimStatus.COMPLETED
-                    contrib = (
-                        db.query(Contribution)
-                        .filter(Contribution.issue_id == issue.id, Contribution.user_id == claim.user_id)
-                        .order_by(Contribution.created_at.desc())
-                        .first()
-                    )
-                    if contrib:
-                        if contrib.status != ContributionStatus.MERGED:
-                            contrib.status = ContributionStatus.ACCEPTED
-                        contrib.validation_status = ContributionValidation.VALID
-                        timeline = list(contrib.timeline_json or [])
-                        timeline.append({
-                            "status": "completed",
-                            "timestamp": now.isoformat(),
-                            "detail": f"Issue #{issue.github_issue_id} marked as completed on GitHub."
-                        })
-                        contrib.timeline_json = timeline
-
-                    db.add(Notification(
-                        user_id=claim.user_id,
-                        type="issue_completed",
-                        payload={
-                            "title": "🎉 Issue Marked Completed",
-                            "message": f"Issue '{issue.title}' was marked as completed on GitHub. Your claim and contribution have been completed!",
-                            "issue_id": issue.id,
-                            "repo_id": issue.repo_id,
-                        },
-                        read=False,
-                        created_at=now,
-                    ))
-                    db.add(ActivityFeed(
-                        type="issue_completed",
-                        actor_id=claim.user_id,
-                        target_type="issue",
-                        target_id=issue.id,
-                        created_at=now,
-                    ))
-
-        elif action in ["reopened", "opened"]:
-            if issue.status == IssueStatus.CLOSED:
-                issue.status = IssueStatus.OPEN
+        state_reason = (issue_data.get("state_reason") or "completed").lower()
+        is_closed = (action == "closed") or (issue_data.get("state") == "closed")
+        if is_closed:
+            from app.services.issue_service import close_or_complete_issue
+            close_or_complete_issue(db=db, issue=issue, state_reason=state_reason)
+        elif action in ["reopened", "opened"] or (issue_data.get("state") == "open" and issue.status == IssueStatus.CLOSED):
+            from app.services.issue_service import reopen_issue
+            reopen_issue(db=db, issue=issue)
 
     db.commit()
     return {"status": "success", "event": "issues", "action": action, "detail": f"Issue #{gh_issue_id} processed."}
@@ -424,6 +361,26 @@ def _handle_pull_request_event(payload: Dict[str, Any], repo: Optional[Repositor
                 })
                 contrib.timeline_json = timeline
 
+    # Also detect issue references in PR title or body like #12, Closes #12, Fixes #12
+    if not linked_issue_id:
+        pr_body = pr_data.get("body") or ""
+        pr_full_text = f"{pr_title} {pr_body}"
+        import re
+        matches = re.findall(r'(?:#|issue\s+|closes\s+|fixes\s+)(\d+)', pr_full_text, re.IGNORECASE)
+        for num_str in matches:
+            try:
+                num = int(num_str)
+                matched_iss = db.query(Issue).filter(
+                    Issue.repo_id == repo_id,
+                    (Issue.github_issue_id == num) | (Issue.id == num)
+                ).first()
+                if matched_iss:
+                    pr.issue_id = matched_iss.id
+                    linked_issue_id = matched_iss.id
+                    break
+            except Exception:
+                pass
+
     # 5. Handle action-specific transitions
     if action in ["opened", "reopened"]:
         pr.status = PRStatus.OPEN
@@ -456,7 +413,14 @@ def _handle_pull_request_event(payload: Dict[str, Any], repo: Optional[Repositor
     elif action == "closed":
         if merged:
             pr.status = PRStatus.MERGED
-            # Contribution marked MERGED and VALID
+            # Close linked issue and complete active claims
+            if linked_issue_id:
+                from app.services.issue_service import close_or_complete_issue
+                issue = db.query(Issue).filter(Issue.id == linked_issue_id).first()
+                if issue:
+                    close_or_complete_issue(db=db, issue=issue, state_reason="completed")
+
+            # Update student contribution record to MERGED and VALID
             if linked_issue_id and author_user:
                 contrib = (
                     db.query(Contribution)
@@ -474,19 +438,6 @@ def _handle_pull_request_event(payload: Dict[str, Any], repo: Optional[Repositor
                         "detail": f"PR #{pr_number} successfully merged into main!"
                     })
                     contrib.timeline_json = timeline
-
-                # Close issue & complete claim
-                issue = db.query(Issue).filter(Issue.id == linked_issue_id).first()
-                if issue:
-                    issue.status = IssueStatus.CLOSED
-
-                claim = (
-                    db.query(Claim)
-                    .filter(Claim.issue_id == linked_issue_id, Claim.user_id == author_user.id, Claim.status == ClaimStatus.ACTIVE)
-                    .first()
-                )
-                if claim:
-                    claim.status = ClaimStatus.COMPLETED
 
                 # Send celebration notification
                 db.add(Notification(

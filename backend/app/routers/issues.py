@@ -5,7 +5,14 @@ from sqlalchemy.orm import Session
 from app.db import get_db
 from app.dependencies import get_current_user
 from app.models import User, IssueDifficulty, IssueStatus, Repository
-from app.schemas.issue import IssueResponse, IssueListResponse, IssueSyncResponse, RepositoryBrief, RepositoryCreate
+from app.schemas.issue import (
+    IssueResponse,
+    IssueListResponse,
+    IssueSyncResponse,
+    RepositoryBrief,
+    RepositoryCreate,
+    IssueUpdate,
+)
 from app.schemas.claim import ClaimResponse, ClaimReleaseResponse
 from app.services.issue_service import (
     sync_issues_from_github,
@@ -15,6 +22,7 @@ from app.services.issue_service import (
     unclaim_issue,
     create_repository,
     delete_repository,
+    update_issue,
 )
 
 router = APIRouter(prefix="/issues", tags=["Issues"])
@@ -157,3 +165,20 @@ def unclaim(
         user_role=current_user.role,
     )
     return ClaimReleaseResponse(**result)
+
+
+@router.patch("/{issue_id}", response_model=IssueResponse, summary="Update issue status or metadata")
+def modify_issue(
+    issue_id: int,
+    body: IssueUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Update an issue (e.g. mark status as 'closed' / completed, or reopen).
+    Permitted for maintainers and admins.
+    When marked 'closed', automatically completes any active student claims
+    and marks contributions as accepted and valid.
+    """
+    return update_issue(db=db, issue_id=issue_id, payload=body, current_user=current_user)
+

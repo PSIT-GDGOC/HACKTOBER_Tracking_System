@@ -20,6 +20,7 @@ export function IssueExplorerContent() {
   const drawers = useDrawers();
   const [repoId, setRepoId] = useState(params.get("repo_id") ?? "");
   const [search, setSearch] = useState(params.get("search") ?? "");
+  const [status, setStatus] = useState(params.get("status") ?? "all");
   const [skip, setSkip] = useState(0);
 
   const [repos, setRepos] = useState([]);
@@ -29,6 +30,7 @@ export function IssueExplorerContent() {
   useEffect(() => {
     setRepoId(params.get("repo_id") ?? "");
     setSearch(params.get("search") ?? "");
+    setStatus(params.get("status") ?? "all");
     setSkip(0);
   }, [params]);
 
@@ -68,12 +70,19 @@ export function IssueExplorerContent() {
       api.issues({
         repo_id: repoId || undefined,
         search: search || undefined,
+        status: status === "all" ? undefined : status,
         skip,
         limit: PAGE_SIZE,
       }),
-    [repoId, search, skip],
+    [repoId, search, status, skip],
     { pollMs: 45000 },
   );
+
+  useEffect(() => {
+    const onIssueUpdated = () => q.refetch();
+    window.addEventListener("issue-updated", onIssueUpdated);
+    return () => window.removeEventListener("issue-updated", onIssueUpdated);
+  }, [q]);
 
   const data = q.data;
   const total = data?.total ?? 0;
@@ -86,7 +95,7 @@ export function IssueExplorerContent() {
       <PageHeader
         eyebrow="Contribute"
         title={activeRepo ? `Issues · ${activeRepo.name}` : "Issue Explorer"}
-        subtitle={activeRepo ? `Showing all open issues for ${activeRepo.name}` : "Explore all open issues across your repositories."}
+        subtitle={activeRepo ? `Showing issues for ${activeRepo.name}` : "Explore issues across your repositories."}
         sticker={`${total} issues`}
         actions={
           <div className="flex items-center gap-2">
@@ -108,7 +117,7 @@ export function IssueExplorerContent() {
         </div>
       )}
 
-      {/* Clean search bar */}
+      {/* Clean search bar & status filter pills */}
       <div className="mb-6 flex flex-wrap items-center gap-3">
         <div className="relative min-w-[240px] flex-1">
           <span className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 font-mono text-sm text-ink-soft">⌕</span>
@@ -126,6 +135,28 @@ export function IssueExplorerContent() {
             className="w-full border-[3px] border-ink bg-white py-2.5 pl-9 pr-4 font-sans text-sm shadow-[3px_3px_0_0_#101010] focus:outline-none"
           />
         </div>
+
+        <div className="flex flex-wrap items-center gap-1.5 font-mono text-xs font-bold">
+          {["all", "open", "claimed", "closed"].map((st) => (
+            <button
+              key={st}
+              onClick={() => {
+                setStatus(st);
+                setSkip(0);
+                const next = new URLSearchParams(params);
+                if (st !== "all") next.set("status", st);
+                else next.delete("status");
+                setParams(next, { replace: true });
+              }}
+              className={`border-2 border-ink px-3 py-2 uppercase shadow-[2px_2px_0_0_#101010] transition-transform ${
+                status === st ? "bg-ink text-paper" : "bg-paper-2 hover:bg-paper-3"
+              }`}
+            >
+              {st}
+            </button>
+          ))}
+        </div>
+
         {repoId && (
           <button
             onClick={() => {

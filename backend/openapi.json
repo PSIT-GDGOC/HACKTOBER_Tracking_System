@@ -893,7 +893,7 @@
           "Auth & Verification"
         ],
         "summary": "Admin-only: Retrieve uploaded ID card photo for manual review",
-        "description": "Admin-only: securely serves the stored ID card photo for a student in the\nmanual verification queue without exposing raw storage keys or PII publicly.",
+        "description": "Admin-only: securely serves the stored ID card photo for a student in the\nmanual verification queue without exposing raw storage keys or PII publicly.\nSupports both Bearer Authorization header and ?token= query param for <img> tags.",
         "operationId": "get_student_id_card_image_auth_id_card_image__student_id__get",
         "parameters": [
           {
@@ -903,6 +903,22 @@
             "schema": {
               "type": "integer",
               "title": "Student Id"
+            }
+          },
+          {
+            "name": "token",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Token"
             }
           },
           {
@@ -918,28 +934,8 @@
                   "type": "null"
                 }
               ],
-              "description": "Bearer JWT access token",
               "title": "Authorization"
-            },
-            "description": "Bearer JWT access token"
-          },
-          {
-            "name": "X-User-Id",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Test/Dev User ID header",
-              "title": "X-User-Id"
-            },
-            "description": "Test/Dev User ID header"
+            }
           }
         ],
         "responses": {
@@ -1509,6 +1505,93 @@
             }
           }
         ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Issues"
+        ],
+        "summary": "Update issue status or metadata",
+        "description": "Update an issue (e.g. mark status as 'closed' / completed, or reopen).\nPermitted for maintainers and admins.\nWhen marked 'closed', automatically completes any active student claims\nand marks contributions as accepted and valid.",
+        "operationId": "modify_issue_issues__issue_id__patch",
+        "parameters": [
+          {
+            "name": "issue_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Issue Id"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueUpdate"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -4489,7 +4572,7 @@
           "Auth & Verification"
         ],
         "summary": "Admin-only: Retrieve uploaded ID card photo for manual review",
-        "description": "Admin-only: securely serves the stored ID card photo for a student in the\nmanual verification queue without exposing raw storage keys or PII publicly.",
+        "description": "Admin-only: securely serves the stored ID card photo for a student in the\nmanual verification queue without exposing raw storage keys or PII publicly.\nSupports both Bearer Authorization header and ?token= query param for <img> tags.",
         "operationId": "get_student_id_card_image_api_auth_id_card_image__student_id__get",
         "parameters": [
           {
@@ -4499,6 +4582,22 @@
             "schema": {
               "type": "integer",
               "title": "Student Id"
+            }
+          },
+          {
+            "name": "token",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Token"
             }
           },
           {
@@ -4514,28 +4613,8 @@
                   "type": "null"
                 }
               ],
-              "description": "Bearer JWT access token",
               "title": "Authorization"
-            },
-            "description": "Bearer JWT access token"
-          },
-          {
-            "name": "X-User-Id",
-            "in": "header",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "description": "Test/Dev User ID header",
-              "title": "X-User-Id"
-            },
-            "description": "Test/Dev User ID header"
+            }
           }
         ],
         "responses": {
@@ -5105,6 +5184,93 @@
             }
           }
         ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IssueResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "tags": [
+          "Issues"
+        ],
+        "summary": "Update issue status or metadata",
+        "description": "Update an issue (e.g. mark status as 'closed' / completed, or reopen).\nPermitted for maintainers and admins.\nWhen marked 'closed', automatically completes any active student claims\nand marks contributions as accepted and valid.",
+        "operationId": "modify_issue_api_issues__issue_id__patch",
+        "parameters": [
+          {
+            "name": "issue_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Issue Id"
+            }
+          },
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Bearer JWT access token",
+              "title": "Authorization"
+            },
+            "description": "Bearer JWT access token"
+          },
+          {
+            "name": "X-User-Id",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Test/Dev User ID header",
+              "title": "X-User-Id"
+            },
+            "description": "Test/Dev User ID header"
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IssueUpdate"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "description": "Successful Response",
@@ -8349,6 +8515,94 @@
           "updated_count"
         ],
         "title": "IssueSyncResponse"
+      },
+      "IssueUpdate": {
+        "properties": {
+          "title": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 500
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "difficulty": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IssueDifficulty"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category"
+          },
+          "tech_tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tech Tags"
+          },
+          "labels": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Labels"
+          },
+          "status": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/IssueStatus"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "IssueUpdate"
       },
       "LeaderboardEntry": {
         "properties": {

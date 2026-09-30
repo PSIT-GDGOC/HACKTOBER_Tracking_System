@@ -69,6 +69,7 @@ export function IssueDrawer({ issueId, onClose, onOpenPr }) {
   const q = useData(() => api.issue(issueId), [issueId]);
   const claim = useMutation(api.claimIssue);
   const unclaim = useMutation(api.unclaimIssue);
+  const updateMutation = useMutation((payload) => api.updateIssue(issueId, payload));
   const [flash, setFlash] = useState(null);
 
   const issue = q.data;
@@ -83,6 +84,21 @@ export function IssueDrawer({ issueId, onClose, onOpenPr }) {
       );
     }
   }, [issue]);
+
+  const handleUpdateStatus = async (newStatus) => {
+    const res = await updateMutation.mutate({ status: newStatus });
+    if (res) {
+      const msg = newStatus === "closed" ? "Issue marked as completed and closed." : "Issue reopened.";
+      toast(msg, { tone: "green" });
+      setFlash(msg);
+      q.refetch();
+      window.dispatchEvent(new CustomEvent("issue-updated", { detail: { id: issueId, status: newStatus } }));
+    } else {
+      const msg = updateMutation.error || "Failed to update issue status";
+      toast(msg, { tone: "red" });
+      setFlash(msg);
+    }
+  };
 
   const doClaim = async () => {
     const res = await claim.mutate(issueId);
@@ -229,6 +245,40 @@ export function IssueDrawer({ issueId, onClose, onOpenPr }) {
               <p className="mt-2 font-mono text-xs text-ink-soft">{statusLabel(issue.status)} — not claimable right now.</p>
             )}
           </Panel>
+
+          {canModerate && (
+            <Panel className="p-4">
+              <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-soft">Maintainer Actions</p>
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                {issue.status !== "closed" ? (
+                  <Button
+                    variant="green"
+                    size="sm"
+                    onClick={() => handleUpdateStatus("closed")}
+                    loading={updateMutation.pending}
+                    disabled={updateMutation.pending}
+                  >
+                    ✓ Mark as Completed & Close
+                  </Button>
+                ) : (
+                  <Button
+                    variant="paper"
+                    size="sm"
+                    onClick={() => handleUpdateStatus("open")}
+                    loading={updateMutation.pending}
+                    disabled={updateMutation.pending}
+                  >
+                    ↺ Reopen Issue
+                  </Button>
+                )}
+              </div>
+              <p className="mt-2 font-mono text-[10px] text-ink-soft">
+                {issue.status !== "closed"
+                  ? "Marking as completed closes the issue, completes any active claims, and validates the student's contribution."
+                  : "Reopening sets the issue back to open for contributors to claim."}
+              </p>
+            </Panel>
+          )}
         </div>
       )}
     </Drawer>

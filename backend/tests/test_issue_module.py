@@ -238,3 +238,71 @@ def test_claim_unclaim_reclaim_idempotency(client_and_db):
     assert timeline["items"][0]["issue_id"] == 1
     assert timeline["items"][0]["status"] == "claimed"
 
+
+def test_complete_and_close_issue_flow(client_and_db):
+    """
+    Verifies that when an issue is closed / marked completed:
+    1. Issue transitions to 'closed'.
+    2. Active claim transitions to 'completed'.
+    3. Contribution transitions to 'accepted' and 'valid'.
+    4. Student dashboard active_claims_count drops to 0, valid_contributions_count increments.
+    5. Repository dashboard closed_issues increments, claimed_issues drops.
+    6. Reopening the issue sets status back to 'open'.
+    """
+    client, db = client_and_db
+
+    # 1. Student 1 claims issue 1
+    res = client.post("/issues/1/claim", headers={"X-User-Id": "1"})
+    assert res.status_code == 201
+
+    # Verify student dashboard before close
+    res = client.get("/dashboard/student", headers={"X-User-Id": "1"})
+    assert res.status_code == 200
+    dash_data = res.json()
+    assert dash_data["active_claims_count"] == 1
+    assert dash_data["valid_contributions_count"] == 0
+
+    # Verify repo dashboard before close
+    res = client.get("/dashboard/repository/1")
+    assert res.status_code == 200
+    repo_dash = res.json()
+    assert repo_dash["closed_issues"] == 0
+    assert repo_dash["claimed_issues"] == 1
+
+    # 2. Maintainer closes / completes issue 1
+    res = client.patch("/issues/1", json={"status": "closed"}, headers={"X-User-Id": "4"})
+    assert res.status_code == 200
+    assert res.json()["status"] == "closed"
+
+    # Verify database state
+    db.expire_all()
+    issue = db.query(Issue).get(1)
+    assert issue.status == IssueStatus.CLOSED
+
+    claim = db.query(Claim).filter_by(issue_id=1, user_id=1).first()
+    assert claim.status == ClaimStatus.COMPLETED
+
+    contrib = db.query(Contribution).filter_by(issue_id=1, user_id=1).first()
+    assert contrib.status == ContributionStatus.ACCEPTED
+    assert contrib.validation_status.value == "valid"
+
+    # 3. Student dashboard after close
+    res = client.get("/dashboard/student", headers={"X-User-Id": "1"})
+    assert res.status_code == 200
+    dash_data = res.json()
+    assert dash_data["active_claims_count"] == 0
+    assert dash_data["valid_contributions_count"] == 1
+
+    # 4. Repository dashboard after close
+    res = client.get("/dashboard/repository/1")
+    assert res.status_code == 200
+    repo_dash = res.json()
+    assert repo_dash["closed_issues"] == 1
+    assert repo_dash["claimed_issues"] == 0
+
+    # 5. Maintainer can reopen the issue
+    res = client.patch("/issues/1", json={"status": "open"}, headers={"X-User-Id": "4"})
+    assert res.status_code == 200
+    assert res.json()["status"] == "open"
+
+

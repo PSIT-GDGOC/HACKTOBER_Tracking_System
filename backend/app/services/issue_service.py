@@ -17,7 +17,7 @@ from app.models import (
     ActivityFeed,
     Notification
 )
-from app.schemas.issue import IssueResponse, RepositoryBrief
+from app.schemas.issue import IssueResponse, RepositoryBrief, IssueUpdate
 from app.schemas.claim import ClaimResponse, ClaimUserBrief
 
 
@@ -204,6 +204,97 @@ def delete_repository(db: Session, repo_id: int) -> dict:
     }
 
 
+def close_or_complete_issue(
+    db: Session,
+    issue: Issue,
+    state_reason: str = "completed",
+    actor_id: Optional[int] = None,
+) -> Issue:
+    """
+    Mark an issue as closed and complete all associated active claims and contributions.
+    Guarantees that once marked as completed/closed, it drops out of active claims on student dashboards
+    and is credited towards valid contributions.
+    """
+    now = datetime.now(timezone.utc)
+    issue.status = IssueStatus.CLOSED
+    issue.updated_at = now
+
+    # Find active claims on this issue
+    active_claims = (
+        db.query(Claim)
+        .filter(Claim.issue_id == issue.id, Claim.status == ClaimStatus.ACTIVE)
+        .all()
+    )
+
+    for claim in active_claims:
+        if state_reason == "not_planned":
+            claim.status = ClaimStatus.EXPIRED
+            contrib = (
+                db.query(Contribution)
+                .filter(Contribution.issue_id == issue.id, Contribution.user_id == claim.user_id)
+                .order_by(Contribution.created_at.desc())
+                .first()
+            )
+            if contrib:
+                timeline = list(contrib.timeline_json or [])
+                timeline.append({
+                    "status": "released",
+                    "timestamp": now.isoformat(),
+                    "detail": f"Issue #{issue.github_issue_id} marked as not planned on GitHub."
+                })
+                contrib.timeline_json = timeline
+        else:
+            claim.status = ClaimStatus.COMPLETED
+            contrib = (
+                db.query(Contribution)
+                .filter(Contribution.issue_id == issue.id, Contribution.user_id == claim.user_id)
+                .order_by(Contribution.created_at.desc())
+                .first()
+            )
+            if contrib:
+                if contrib.status != ContributionStatus.MERGED:
+                    contrib.status = ContributionStatus.ACCEPTED
+                contrib.validation_status = ContributionValidation.VALID
+                contrib.updated_at = now
+                timeline = list(contrib.timeline_json or [])
+                timeline.append({
+                    "status": "completed",
+                    "timestamp": now.isoformat(),
+                    "detail": f"Issue #{issue.github_issue_id} marked as completed on GitHub."
+                })
+                contrib.timeline_json = timeline
+
+            db.add(Notification(
+                user_id=claim.user_id,
+                type="issue_completed",
+                payload={
+                    "title": "🎉 Issue Marked Completed",
+                    "message": f"Issue '{issue.title}' was marked as completed. Your contribution has been validated!",
+                    "issue_id": issue.id,
+                    "repo_id": issue.repo_id,
+                },
+                read=False,
+                created_at=now,
+            ))
+            db.add(ActivityFeed(
+                type="issue_completed",
+                actor_id=actor_id or claim.user_id,
+                target_type="issue",
+                target_id=issue.id,
+                created_at=now,
+            ))
+
+    return issue
+
+
+def reopen_issue(db: Session, issue: Issue, actor_id: Optional[int] = None) -> Issue:
+    """Reopen a closed issue so it becomes available in open issue explorer."""
+    now = datetime.now(timezone.utc)
+    issue.status = IssueStatus.OPEN
+    issue.updated_at = now
+    return issue
+
+
 def sync_issues_from_github(db: Session, repo_id: Optional[int] = None) -> dict:
     """Sync issues from GitHub REST API for one or all registered repositories."""
     discovered_count = 0
@@ -275,6 +366,7 @@ def sync_issues_from_github(db: Session, repo_id: Optional[int] = None) -> dict:
                 body = item.get("body", "")
                 label_names = [lbl["name"] for lbl in item.get("labels", []) if isinstance(lbl, dict) and "name" in lbl]
                 gh_state = item.get("state", "open")
+                state_reason = (item.get("state_reason") or "completed").lower()
 
                 difficulty, category, tech_tags = _infer_issue_metadata(label_names)
 
@@ -286,10 +378,12 @@ def sync_issues_from_github(db: Session, repo_id: Optional[int] = None) -> dict:
                     existing_issue.tech_tags = tech_tags
                     if category:
                         existing_issue.category = category
-                    if gh_state == "closed" and existing_issue.status != IssueStatus.CLOSED:
-                        existing_issue.status = IssueStatus.CLOSED
+
+                    if gh_state == "closed":
+                        # Mark closed and complete any active claims
+                        close_or_complete_issue(db=db, issue=existing_issue, state_reason=state_reason)
                     elif gh_state == "open" and existing_issue.status == IssueStatus.CLOSED:
-                        existing_issue.status = IssueStatus.OPEN
+                        reopen_issue(db=db, issue=existing_issue)
                     updated_total += 1
                 else:
                     new_issue = Issue(
@@ -307,11 +401,19 @@ def sync_issues_from_github(db: Session, repo_id: Optional[int] = None) -> dict:
                     created_total += 1
                 synced_total += 1
 
-            # Delete issues from DB that were removed from GitHub for this repo
+            # For issues removed or deleted on GitHub, close them gracefully if they hold activity, else delete
             existing_db_issues = db.query(Issue).filter(Issue.repo_id == repo.id).all()
             for db_iss in existing_db_issues:
                 if db_iss.github_issue_id not in fetched_issue_ids:
-                    db.delete(db_iss)
+                    has_activity = (
+                        db.query(Claim).filter(Claim.issue_id == db_iss.id).count() > 0 or
+                        db.query(Contribution).filter(Contribution.issue_id == db_iss.id).count() > 0
+                    )
+                    if has_activity:
+                        if db_iss.status != IssueStatus.CLOSED:
+                            close_or_complete_issue(db=db, issue=db_iss, state_reason="not_planned")
+                    else:
+                        db.delete(db_iss)
 
     db.commit()
     return {
@@ -689,3 +791,60 @@ def unclaim_issue(db: Session, issue_id: int, user_id: int, user_role: UserRole 
         "claim_id": active_claim.id,
         "status": ClaimStatus.RELEASED.value
     }
+
+
+def update_issue(
+    db: Session,
+    issue_id: int,
+    payload: IssueUpdate,
+    current_user: User,
+) -> IssueResponse:
+    """
+    Update an issue's status or metadata.
+    Permitted for maintainers and admins.
+    When marked CLOSED, completes active claims, marks contributions VALID, and sends notification.
+    """
+    issue = db.query(Issue).filter(Issue.id == issue_id).first()
+    if not issue:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Issue with ID {issue_id} not found."
+        )
+
+    if current_user.role not in [UserRole.MAINTAINER, UserRole.ADMIN]:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Only maintainers and admins can modify issue status."
+        )
+
+    if payload.title is not None:
+        issue.title = payload.title
+    if payload.description is not None:
+        issue.description = payload.description
+    if payload.difficulty is not None:
+        issue.difficulty = payload.difficulty
+    if payload.category is not None:
+        issue.category = payload.category
+    if payload.tech_tags is not None:
+        issue.tech_tags = payload.tech_tags
+    if payload.labels is not None:
+        issue.labels = payload.labels
+
+    if payload.status is not None:
+        if payload.status == IssueStatus.CLOSED:
+            close_or_complete_issue(db=db, issue=issue, state_reason="completed", actor_id=current_user.id)
+        elif payload.status == IssueStatus.OPEN:
+            reopen_issue(db=db, issue=issue, actor_id=current_user.id)
+        else:
+            issue.status = payload.status
+
+    db.commit()
+    db.refresh(issue)
+
+    active_claim = (
+        db.query(Claim)
+        .filter(Claim.issue_id == issue.id, Claim.status == ClaimStatus.ACTIVE)
+        .first()
+    )
+    return _enrich_issue_response(issue, active_claim)
+
