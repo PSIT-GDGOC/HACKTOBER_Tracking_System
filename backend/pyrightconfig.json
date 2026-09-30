@@ -7,5 +7,5 @@
     "."
   ],
   "venvPath": ".",
-  "venv": ".venv"
+  "venv": "venv"
 }
