@@ -17,3 +17,4 @@ PyYAML>=6.0.1
 celery>=5.3.6
 resend>=2.6.0
 email-validator>=2.2.0
+zxing-cpp>=2.2.0

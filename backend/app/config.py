@@ -1,3 +1,4 @@
+# pyrefly: ignore [missing-import]
 from pydantic_settings import BaseSettings, SettingsConfigDict
 import re
 
@@ -21,6 +22,8 @@ class Settings(BaseSettings):
     GITHUB_ORG: str = "PSIT-GDGOC"  # GitHub org to auto-sync repos from
     GITHUB_WEB_REPO_URL: str = "https://github.com/PSIT-GDGOC/hacktoberfest-web"
     GITHUB_ANDROID_REPO_URL: str = "https://github.com/gdgoc-psit/hacktoberfest-android"
+    ENABLE_BACKGROUND_ORG_SYNC: bool = True
+    ORG_SYNC_INTERVAL_SECONDS: int = 1800  # Default 30 minutes (lowers Render memory footprint)
     # GitHub OAuth (student GitHub account linking)
     GITHUB_CLIENT_ID: str = ""
     GITHUB_CLIENT_SECRET: str = ""

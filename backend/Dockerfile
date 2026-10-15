@@ -1,5 +1,9 @@
 FROM python:3.12-slim
 
+# Constrain memory arenas to prevent Linux glibc fragmentation on 512MB RAM
+ENV MALLOC_ARENA_MAX=2
+ENV PYTHONUNBUFFERED=1
+
 RUN apt-get update && apt-get install -y \
     libzbar0 libgl1 libglib2.0-0 \
     && rm -rf /var/lib/apt/lists/*
@@ -11,4 +15,4 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "10000"]
+CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "10000", "--timeout-keep-alive", "5"]

@@ -260,7 +260,7 @@ async def sync_org_repos(db: Session) -> Dict[str, Any]:
     # ── Automatically backfill/sync issues for all synced repos ───────────────
     try:
         from app.services.issue_service import sync_issues_from_github
-        issue_sync_result = sync_issues_from_github(db=db)
+        issue_sync_result = sync_issues_from_github(db=db, skip_repo_discovery=True)
         logger.info("OrgSync: Automatically synced issues: %s", issue_sync_result)
     except Exception as e:
         logger.warning("OrgSync: Automatic issue sync warning: %s", e)
