@@ -19,15 +19,18 @@ configure_logging()
 logger = logging.getLogger(__name__)
 
 # ─── Org Repo Sync Background Task ────────────────────────────────────────────
-ORG_SYNC_INTERVAL_SECONDS = 300  # re-sync every 5 minutes
-
-
 async def _org_sync_loop():
-    """Background loop: syncs PSIT-GDGOC org repos every 5 minutes."""
+    """Background loop: syncs PSIT-GDGOC org repos periodically with explicit garbage collection."""
     from app.db import SessionLocal
     from app.services.org_sync_service import sync_org_repos
+    import gc
 
-    await asyncio.sleep(5)  # brief delay after startup so requests are served first
+    if not settings.ENABLE_BACKGROUND_ORG_SYNC:
+        logger.info("OrgSync background task is disabled by configuration.")
+        return
+
+    interval = max(300, settings.ORG_SYNC_INTERVAL_SECONDS)
+    await asyncio.sleep(20)  # brief delay after startup so requests are served first
     while True:
         try:
             db = SessionLocal()
@@ -40,24 +43,29 @@ async def _org_sync_loop():
                 db.close()
             except Exception:
                 pass
-        await asyncio.sleep(ORG_SYNC_INTERVAL_SECONDS)
+            # Force glibc / Python to release unused memory back to the OS
+            gc.collect()
+        await asyncio.sleep(interval)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """App lifespan: launch periodic background sync immediately without blocking cold starts."""
-    sync_task = asyncio.create_task(_org_sync_loop())
-    logger.info("OrgSync background task started (interval: %ds)", ORG_SYNC_INTERVAL_SECONDS)
+    sync_task = None
+    if settings.ENABLE_BACKGROUND_ORG_SYNC:
+        sync_task = asyncio.create_task(_org_sync_loop())
+        logger.info("OrgSync background task started (interval: %ds)", settings.ORG_SYNC_INTERVAL_SECONDS)
 
     yield  # app is running immediately
 
     # ── Shutdown: cancel background task ──────────────────────────────────────
-    sync_task.cancel()
-    try:
-        await sync_task
-    except asyncio.CancelledError:
-        pass
-    logger.info("OrgSync background task stopped.")
+    if sync_task:
+        sync_task.cancel()
+        try:
+            await sync_task
+        except asyncio.CancelledError:
+            pass
+        logger.info("OrgSync background task stopped.")
 
 
 app = FastAPI(

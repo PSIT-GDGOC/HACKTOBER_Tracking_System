@@ -295,10 +295,16 @@ def reopen_issue(db: Session, issue: Issue, actor_id: Optional[int] = None) -> I
     return issue
 
 
-def sync_issues_from_github(db: Session, repo_id: Optional[int] = None) -> dict:
+def sync_issues_from_github(
+    db: Session,
+    repo_id: Optional[int] = None,
+    skip_repo_discovery: bool = False,
+) -> dict:
     """Sync issues from GitHub REST API for one or all registered repositories."""
+    import gc
+
     discovered_count = 0
-    if not repo_id:
+    if not repo_id and not skip_repo_discovery:
         discovered_count = discover_github_repositories(db)
 
     repos_query = db.query(Repository)
@@ -415,7 +421,13 @@ def sync_issues_from_github(db: Session, repo_id: Optional[int] = None) -> dict:
                     else:
                         db.delete(db_iss)
 
-    db.commit()
+            # Commit per repository and expunge objects from memory to prevent heap buildup
+            db.commit()
+            db.expunge_all()
+
+    # Reclaim Python heap memory after sync completes
+    gc.collect()
+
     return {
         "message": "GitHub issues sync completed successfully.",
         "synced_count": synced_total,
