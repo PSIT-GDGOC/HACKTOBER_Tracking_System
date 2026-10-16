@@ -16,6 +16,7 @@ import { api, tokenStore } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useMutation } from "@/lib/hooks";
 import { cn } from "@/utils/cn";
+import passwordHelpImage from "@/assets/password-help.svg";
 import {
   Badge, Button, Callout, Field, GdgMark, Input, Panel, Sticker,
 } from "@/components/ui";
@@ -907,23 +908,7 @@ export function Login() {
                   />
                 </Field>
 
-                <Field
-                  label="Password"
-                  hint={
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setError(null);
-                        setSuccessMsg(null);
-                        setResetIdentifier(identifier);
-                        setMode("forgot_request");
-                      }}
-                      className="font-mono font-bold uppercase text-gblue underline decoration-dotted hover:text-ink"
-                    >
-                      Forgot password?
-                    </button>
-                  }
-                >
+                <Field label="Password">
                   <div className="relative">
                     <Input
                       type={showPassword ? "text" : "password"}
@@ -948,6 +933,17 @@ export function Login() {
                   Log in →
                 </Button>
               </form>
+
+              <aside aria-labelledby="password-help-title" className="mt-5 flex items-start gap-3 border-[2px] border-ink bg-[#fff7d6] p-4">
+                <img src={passwordHelpImage} alt="" width="48" height="48" className="h-12 w-12 shrink-0" />
+                <div className="min-w-0">
+                  <h2 id="password-help-title" className="font-display text-sm font-extrabold">Forgot your password?</h2>
+                  <p className="mt-1 text-xs leading-relaxed text-ink-soft">Contact the admin for help restoring access.</p>
+                  <a href="mailto:gdgoc.psit@gmail.com?subject=Password%20reset%20help" className="mt-2 inline-block break-all text-sm font-bold text-gblue underline underline-offset-2 hover:text-ink focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2">
+                    gdgoc.psit@gmail.com
+                  </a>
+                </div>
+              </aside>
 
               <p className="mt-5 text-center text-sm text-ink-soft">
                 New here?{" "}
