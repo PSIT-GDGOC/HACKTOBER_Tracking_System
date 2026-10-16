@@ -772,10 +772,11 @@ def test_forgot_password_and_otp_reset(client_and_db):
     set_user_password(db, user, "OldPassword123!")
 
     # 1. Request forgot password OTP
-    res_forgot = client.post("/auth/forgot-password", json={"identifier": "2200330100777"})
+    with patch("secrets.randbelow", return_value=543210):
+        res_forgot = client.post("/auth/forgot-password", json={"identifier": "2200330100777"})
     assert res_forgot.status_code == 200
     assert res_forgot.json()["success"] is True
-    assert "Verification code has been sent" in res_forgot.json()["message"]
+    assert "If an account with that roll number exists" in res_forgot.json()["message"]
 
     # Retrieve stored OTP hash from DB to simulate user receiving the OTP code
     db.expire_all()
@@ -793,10 +794,6 @@ def test_forgot_password_and_otp_reset(client_and_db):
     })
     assert res_wrong.status_code == 400
     assert "Invalid verification code" in res_wrong.json()["detail"]
-
-    # Now let's test request with mocked OTP
-    with patch("secrets.randbelow", return_value=543210):
-        client.post("/auth/forgot-password", json={"identifier": "2200330100777"})
 
     # OTP is 543210 + 100000 = 643210
     res_reset = client.post("/auth/reset-password", json={

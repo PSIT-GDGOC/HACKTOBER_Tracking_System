@@ -31,19 +31,10 @@ from app.services.auth_service import (
     hash_token,
     create_email_token,
 )
-import app.services.email_service as email_service_module
 
 
 TEST_ROLL = "2200330100999"
 TEST_EMAIL = "student.test@psit.ac.in"
-
-
-@pytest.fixture(autouse=True)
-def reset_rate_limits():
-    """Clear rate limits before and after every test."""
-    email_service_module._email_rate_limits.clear()
-    yield
-    email_service_module._email_rate_limits.clear()
 
 
 @pytest.fixture
@@ -211,7 +202,7 @@ def test_wrong_purpose_token_rejected(client_and_db):
 def test_send_verification_rate_limiting(client_and_db):
     client, _ = client_and_db
 
-    with patch("app.services.email_service.send_verification_email", return_value=True):
+    with patch("app.routers.auth.send_verification_email", return_value=True):
         # 1st request: OK
         res1 = client.post("/auth/send-verification", json={"email": TEST_EMAIL})
         assert res1.status_code == 200
@@ -232,9 +223,6 @@ def test_forgot_password_generic_response(client_and_db):
         assert res_existing.status_code == 200
         msg_existing = res_existing.json()["message"]
 
-        # Clear rate limiter between calls
-        email_service_module._email_rate_limits.clear()
-
         # Non-existing email
         res_nonexistent = client.post("/auth/forgot-password", json={"email": "nobody@example.com"})
         assert res_nonexistent.status_code == 200
@@ -249,13 +237,14 @@ def test_forgot_password_by_roll_number_fetches_email_and_sends_otp(client_and_d
     """Ensure numeric roll number is detected, email is fetched from DB, and OTP is generated & dispatched."""
     client, SessionLocal = client_and_db
 
-    with patch("app.routers.auth.send_password_reset_email") as mock_send_email:
+    with patch("app.routers.auth.send_password_reset_email", return_value=True) as mock_send_email:
         # Enter purely numeric roll number in identifier
         res = client.post("/auth/forgot-password", json={"identifier": TEST_ROLL})
         assert res.status_code == 200
         data = res.json()
         assert data["success"] is True
-        assert "verification code has been sent" in data["message"].lower()
+        assert "if an account with that roll number exists" in data["message"].lower()
+        assert data["email"] is None
 
         # Check that user in DB received an OTP hash and expiry
         db = SessionLocal()
@@ -336,3 +325,98 @@ def test_require_email_verification_setting(client_and_db):
             "password": "OldPassword123!",
         })
         assert res_allowed.status_code == 200
+
+
+@pytest.mark.parametrize("outcome", [False, None, RuntimeError("sensitive-provider-data")])
+def test_failed_reset_preserves_previous_credentials(client_and_db, outcome, caplog):
+    client, SessionLocal = client_and_db
+    with SessionLocal() as db:
+        user = db.query(User).filter(User.email == TEST_EMAIL).one()
+        user.reset_otp_hash = hash_password("123456")
+        user.reset_otp_expires = datetime.now(timezone.utc) + timedelta(minutes=10)
+        previous_hash = user.reset_otp_hash
+        old_token = create_email_token(db, user, "reset_password", 30)
+    kwargs = {"side_effect": outcome} if isinstance(outcome, Exception) else {"return_value": outcome}
+    with patch("app.routers.auth.send_password_reset_email", **kwargs):
+        response = client.post("/auth/forgot-password", json={"identifier": TEST_ROLL})
+    assert response.status_code == 200
+    assert response.json()["email"] is None
+    assert "sensitive-provider-data" not in caplog.text
+    with SessionLocal() as db:
+        user = db.query(User).filter(User.email == TEST_EMAIL).one()
+        assert user.reset_otp_hash == previous_hash
+        tokens = db.query(EmailToken).filter(EmailToken.user_id == user.id).all()
+        assert len(tokens) == 1
+        assert tokens[0].token_hash == hash_token(old_token)
+        assert tokens[0].used_at is None
+    # Delivery failure does not refund the request reservation.
+    retry = client.post("/auth/forgot-password", json={"identifier": TEST_ROLL})
+    assert retry.status_code == 429
+    assert int(retry.headers["retry-after"]) > 0
+
+
+def test_roll_response_and_throttle_do_not_reveal_account(client_and_db):
+    client, _ = client_and_db
+    known = client.post("/auth/forgot-password", json={"identifier": TEST_ROLL})
+    unknown = client.post("/auth/forgot-password", json={"identifier": "9999999999999"})
+    assert known.status_code == unknown.status_code == 200
+    assert known.json() == unknown.json()
+    for identifier in (TEST_ROLL, "9999999999999"):
+        assert client.post("/auth/forgot-password", json={"identifier": identifier}).status_code == 429
+
+
+def test_aliases_share_delivery_limit_and_normalization(client_and_db):
+    client, _ = client_and_db
+    with patch("app.routers.auth.send_password_reset_email", return_value=True) as send:
+        first = client.post("/auth/forgot-password", json={"identifier": TEST_ROLL})
+        alias = client.post("/auth/forgot-password", json={"email": f" {TEST_EMAIL.upper()} "})
+        assert first.status_code == alias.status_code == 200
+        assert alias.json()["email"] == TEST_EMAIL
+        assert send.call_count == 1
+        assert client.post("/auth/forgot-password", json={"email": TEST_EMAIL}).status_code == 429
+
+
+def test_wildcard_identifier_never_sends_email(client_and_db):
+    client, _ = client_and_db
+    with patch("app.routers.auth.send_password_reset_email", return_value=True) as send:
+        for identifier in ("%", "_", "%@psit.ac.in"):
+            assert client.post("/auth/forgot-password", json={"identifier": identifier}).status_code == 200
+        send.assert_not_called()
+
+
+def test_ip_limit_prevents_rotating_unknown_identifiers(client_and_db):
+    client, _ = client_and_db
+    for i in range(20):
+        assert client.post("/auth/forgot-password", json={"identifier": f"unknown-{i}"}).status_code == 200
+    response = client.post(
+        "/auth/forgot-password", json={"identifier": "another-unknown"},
+        headers={"X-Forwarded-For": "192.0.2.1"},
+    )
+    assert response.status_code == 429
+
+
+def test_successful_reset_link_from_email_works(client_and_db):
+    client, _ = client_and_db
+    with patch("app.routers.auth.send_password_reset_email", return_value=True) as send:
+        assert client.post("/auth/forgot-password", json={"email": TEST_EMAIL}).status_code == 200
+    token = send.call_args.kwargs["token"]
+    response = client.post("/auth/reset-password", json={"token": token, "new_password": "ChangedPassword123!"})
+    assert response.status_code == 200
+    assert client.post("/auth/reset-password", json={"token": token, "new_password": "ChangedAgain123!"}).status_code == 400
+
+
+def test_unknown_verification_address_is_throttled_even_without_delivery(client_and_db):
+    client, _ = client_and_db
+    with patch("app.routers.auth.send_verification_email", return_value=False) as send:
+        for email in (TEST_EMAIL, "unknown@example.com"):
+            assert client.post("/auth/send-verification", json={"email": email}).status_code == 200
+            assert client.post("/auth/send-verification", json={"email": email}).status_code == 429
+        assert send.call_count == 1
+
+
+def test_verification_throttle_does_not_expose_reset_account_lookup(client_and_db):
+    client, _ = client_and_db
+    for email in (TEST_EMAIL, "unknown@example.com"):
+        assert client.post("/auth/forgot-password", json={"email": email}).status_code == 200
+        # A shared public/delivery bucket would return 429 only for a known account.
+        assert client.post("/auth/send-verification", json={"email": email}).status_code == 200

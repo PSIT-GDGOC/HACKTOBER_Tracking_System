@@ -66,3 +66,10 @@ def client(SessionLocal):  # noqa: N803
     with TestClient(app) as c:
         yield c
     app.dependency_overrides.clear()
+
+
+@pytest.fixture(autouse=True)
+def mock_auth_email_delivery(monkeypatch):
+    """Auth tests must not send real email; provider tests mock transports separately."""
+    monkeypatch.setattr("app.routers.auth.send_password_reset_email", lambda **kwargs: True)
+    monkeypatch.setattr("app.routers.auth.send_verification_email", lambda **kwargs: True)

@@ -77,8 +77,8 @@ class VerifyEmailResponse(BaseModel):
 
 
 class ForgotPasswordRequest(BaseModel):
-    email: Optional[str] = Field(None, description="Registered email address or PSIT roll number")
-    identifier: Optional[str] = Field(None, description="PSIT roll number or email address")
+    email: Optional[str] = Field(None, max_length=320, description="Registered email address or PSIT roll number")
+    identifier: Optional[str] = Field(None, max_length=320, description="PSIT roll number or email address")
 
 
 class ForgotPasswordResponse(BaseModel):

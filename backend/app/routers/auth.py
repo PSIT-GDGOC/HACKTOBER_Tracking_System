@@ -19,6 +19,7 @@ from typing import List, Optional
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status, BackgroundTasks, Header
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -197,7 +198,7 @@ def send_verification(
         )
 
     # Cooldown & rate limiting
-    check_email_rate_limit(target_email)
+    check_email_rate_limit(target_email, db)
 
     token_result = request_email_verification_token(db=db, email=target_email)
     if token_result:
@@ -244,103 +245,84 @@ def verify_email(
 @router.post("/forgot-password", response_model=ForgotPasswordResponse, summary="Request password reset via email or roll number")
 def forgot_password(
     payload: ForgotPasswordRequest,
+    request: Request,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
-    """
-    Send a password reset link and OTP to the registered student's email address.
-    
-    Accepts either roll number or email:
-    - If the input consists entirely of numbers (digits) -> treated as Roll Number.
-      The system looks up the student by roll number, fetches their registered email
-      from the database, generates a 6-digit OTP + reset token, and dispatches the email.
-    - If the input contains '@' (e.g. ends with @gmail.com or @psit.ac.in) -> treated as Email.
-    """
-    raw_input = (payload.identifier or payload.email or "").strip()
+    """Accept a reset request without revealing account or delivery status."""
+    raw_input = (payload.identifier or payload.email or "").strip().lower()
     if not raw_input:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=400,
             detail="Please provide your registered roll number or email address.",
         )
+    # All identifiers, including unknown accounts, consume request quota.
+    # Only the server's trusted client address is used, never raw forwarded headers.
+    check_email_rate_limit(
+        request.client.host if request.client else "unknown", db,
+        scope="reset-ip", limit=20, cooldown=0,
+    )
+    check_email_rate_limit(raw_input, db, scope="reset-identifier")
+    # Lookup, password hashing and provider latency happen after the response.
+    # Pass the engine, not a request-scoped session, to the background task.
+    background_tasks.add_task(_deliver_password_reset, db.get_bind(), raw_input)
+    is_email = "@" in raw_input
+    return ForgotPasswordResponse(
+        success=True,
+        message=(
+            "If an account with that email exists, password reset instructions have been sent."
+            if is_email else
+            "If an account with that roll number exists, password reset instructions have been sent."
+        ),
+        # Echo only caller-provided data; never disclose a registered address.
+        email=raw_input if is_email else None,
+    )
 
-    # Detect if user entered a numeric roll number or an email address
-    is_numeric_roll = raw_input.isdigit()
-    is_email = "@" in raw_input or raw_input.lower().endswith("@gmail.com")
 
-    target_user = None
-
-    if is_numeric_roll:
-        # Numeric roll number: look up student in DB to fetch their registered email
-        target_user = db.query(User).filter(User.psit_roll_no.ilike(raw_input)).first()
-    elif is_email:
-        clean_email = raw_input.lower()
-        target_user = db.query(User).filter(User.email.ilike(clean_email)).first()
-    else:
-        # Fallback (alphanumeric roll number or identifier)
-        target_user = db.query(User).filter(
-            (User.psit_roll_no.ilike(raw_input)) | (User.email.ilike(raw_input))
-        ).first()
-
-    if target_user and target_user.email:
-        # Generate 6-digit OTP code for instant verification
-        otp_num = secrets.randbelow(900_000) + 100_000
-        otp_code = str(otp_num)
-        new_otp_hash = hash_password(otp_code)
-
-        # Keep recent valid hashes (separated by ';') so re-requested OTPs don't instantly break previous ones
-        existing_hashes = [h.strip() for h in (target_user.reset_otp_hash or "").split(";") if h.strip()]
-        target_user.reset_otp_hash = ";".join([new_otp_hash] + existing_hashes[:2])
-        target_user.reset_otp_expires = datetime.now(timezone.utc) + timedelta(minutes=15)
-
-        # Generate Resend token for 1-click email link (commits both user OTP and token in a single round-trip)
-        raw_token = create_email_token(
-            db=db,
-            user=target_user,
-            purpose="reset_password",
-            expire_minutes=settings.RESET_TOKEN_EXPIRE_MINUTES,
-        )
-
-        # Dispatch reset email synchronously containing BOTH the reset link and OTP
+def _deliver_password_reset(bind, identifier: str) -> None:
+    """Commit new credentials only after provider acceptance; retain old ones on failure."""
+    with Session(bind) as db:
         try:
-            send_password_reset_email(
-                to_email=target_user.email,
-                name=target_user.name,
-                token=raw_token,
-                otp_code=otp_code,
+            # Equality avoids SQL LIKE wildcard identifiers matching arbitrary users.
+            target_user = db.query(User).filter(
+                (func.lower(User.email) == identifier) |
+                (func.lower(User.psit_roll_no) == identifier)
+            ).first()
+            if not target_user or not target_user.email:
+                return
+            # Email and roll aliases share a delivery budget. Silently suppress
+            # this account-dependent limit to keep the public response uniform.
+            try:
+                check_email_rate_limit(target_user.email, db, scope="reset-destination")
+            except HTTPException as exc:
+                if exc.status_code != 429:
+                    raise
+                return
+
+            otp_code = str(secrets.randbelow(900_000) + 100_000)
+            new_otp_hash = hash_password(otp_code)
+            existing_hashes = [
+                h.strip() for h in (target_user.reset_otp_hash or "").split(";") if h.strip()
+            ]
+            target_user.reset_otp_hash = ";".join([new_otp_hash] + existing_hashes[:2])
+            target_user.reset_otp_expires = datetime.now(timezone.utc) + timedelta(minutes=15)
+            raw_token = create_email_token(
+                db=db, user=target_user, purpose="reset_password",
+                expire_minutes=settings.RESET_TOKEN_EXPIRE_MINUTES, commit=False,
             )
+            accepted = send_password_reset_email(
+                to_email=target_user.email, name=target_user.name,
+                token=raw_token, otp_code=otp_code,
+            )
+            if accepted is not True:
+                db.rollback()
+                logger.error("Password reset delivery failed; new credentials rolled back")
+                return
+            db.commit()
         except Exception as exc:
-            logger.error("Failed to send reset email to <%s>: %s", target_user.email, exc)
-
-        # Compute masked email (e.g. a***a@gmail.com) for user privacy
-        parts = target_user.email.split("@")
-        masked_email = parts[0][0] + "***" + parts[0][-1] + "@" + parts[1] if len(parts[0]) > 2 else target_user.email
-
-        if is_numeric_roll:
-            return ForgotPasswordResponse(
-                success=True,
-                message=f"Verification code has been sent to your registered email ({masked_email}). Please check your inbox.",
-                email=masked_email,
-            )
-        else:
-            return ForgotPasswordResponse(
-                success=True,
-                message="If an account with that email exists, password reset instructions have been sent.",
-                email=target_user.email,
-            )
-
-    # If no account found, return generic message to prevent account enumeration
-    if is_numeric_roll:
-        return ForgotPasswordResponse(
-            success=True,
-            message="If an account with that roll number exists, password reset instructions have been sent.",
-            email=None,
-        )
-    else:
-        return ForgotPasswordResponse(
-            success=True,
-            message="If an account with that email exists, password reset instructions have been sent.",
-            email=raw_input if is_email else None,
-        )
+            db.rollback()
+            # Provider exception messages may contain secrets; log only their type.
+            logger.error("Password reset processing failed (%s)", type(exc).__name__)
 
 
 @router.post("/reset-password", response_model=ResetPasswordResponse, summary="Reset password using token or OTP")

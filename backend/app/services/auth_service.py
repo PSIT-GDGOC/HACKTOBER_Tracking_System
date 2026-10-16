@@ -304,7 +304,7 @@ def hash_token(raw_token: str) -> str:
     return hashlib.sha256(raw_token.strip().encode("utf-8")).hexdigest()
 
 
-def create_email_token(db: Session, user: User, purpose: str, expire_minutes: int) -> str:
+def create_email_token(db: Session, user: User, purpose: str, expire_minutes: int, *, commit: bool = True) -> str:
     """Generate a cryptographic 32-byte urlsafe token and store its SHA-256 hash in email_tokens."""
     now = datetime.now(timezone.utc)
     
@@ -330,7 +330,10 @@ def create_email_token(db: Session, user: User, purpose: str, expire_minutes: in
         used_at=None,
     )
     db.add(token_record)
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     return raw_token
 
 

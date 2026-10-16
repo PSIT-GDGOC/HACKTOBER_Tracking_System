@@ -1003,7 +1003,7 @@ export function Login() {
             <>
               <h1 className="mt-6 font-display text-3xl font-extrabold uppercase leading-none tracking-tight">Set New Password</h1>
               <p className="mt-2 text-sm text-ink-soft">
-                Enter the 6-digit verification code sent to your email ({maskedEmail || resetIdentifier}) and your new password.
+                Enter the 6-digit verification code sent to your registered email{maskedEmail ? ` (${maskedEmail})` : ""} and your new password.
               </p>
 
               {successMsg && (

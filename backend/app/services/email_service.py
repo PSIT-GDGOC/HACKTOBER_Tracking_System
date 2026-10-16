@@ -2,73 +2,25 @@
 
 Features:
 - Resend API integration (resend.Emails.send)
-- Per-email rate limiting / cooldown (1 email per 60s, max 5 emails per hour)
+- Database-backed request limiting (1 request per 60s, max 5 per hour)
 - Responsive, clean HTML and plain text email templates
 - Background execution via FastAPI BackgroundTasks
-- Fallback logging in test/dev environments without hardcoded secrets
+- Explicit provider acceptance/failure results and redacted operational logs
 - Backward-compatible SMTP OTP helper preserved for legacy callers
 """
 import logging
 import smtplib
-import time
-from collections import defaultdict
+import ssl
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from typing import Dict, List, Optional
+from typing import Optional
 
 import resend
-from fastapi import HTTPException, status
 
 from app.config import settings
+from app.services.email_rate_limit import check_email_rate_limit
 
 logger = logging.getLogger(__name__)
-
-# In-memory rate limiting store: email -> list of epoch timestamps
-_email_rate_limits: Dict[str, List[float]] = defaultdict(list)
-
-
-def check_email_rate_limit(email: str) -> None:
-    """Enforce per-email rate limiting to protect Resend free quota (100 emails/day).
-
-    Rules:
-    - Maximum 1 email every 60 seconds per email address.
-    - Maximum 5 emails per hour (3600 seconds) per email address.
-    """
-    clean_email = email.strip().lower()
-
-    # Exclude legacy test fixture from rate limit lock
-    if clean_email == "forgot@psit.ac.in":
-        return
-
-    now = time.time()
-    history = _email_rate_limits[clean_email]
-
-    # Purge timestamps older than 1 hour (3600s)
-    cutoff = now - 3600
-    valid_history = [t for t in history if t > cutoff]
-    _email_rate_limits[clean_email] = valid_history
-
-    # Rule 1: Max 1 email per 60 seconds
-    recent_60s = [t for t in valid_history if t > (now - 60)]
-    if len(recent_60s) >= 1:
-        wait_seconds = int(60 - (now - recent_60s[-1])) + 1
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Please wait {wait_seconds} seconds before requesting another email.",
-        )
-
-    # Rule 2: Max 5 emails per hour
-    if len(valid_history) >= 5:
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail="Too many email requests for this address. Please try again in an hour.",
-        )
-
-
-def record_email_sent(email: str) -> None:
-    """Record an email dispatch timestamp for rate limiting."""
-    clean_email = email.strip().lower()
-    _email_rate_limits[clean_email].append(time.time())
 
 
 def _build_action_urls(endpoint: str, token: str) -> tuple[str, str]:
@@ -81,7 +33,7 @@ def _build_action_urls(endpoint: str, token: str) -> tuple[str, str]:
     return hash_url, hash_url
 
 
-def send_verification_email(to_email: str, name: str, token: str) -> None:
+def send_verification_email(to_email: str, name: str, token: str) -> bool:
     """Send an email verification link via Resend.
 
     Designed for use with FastAPI BackgroundTasks. Errors are caught and logged
@@ -129,7 +81,7 @@ def send_verification_email(to_email: str, name: str, token: str) -> None:
         f"If you did not create an account, you can safely ignore this email."
     )
 
-    _dispatch_email(
+    return _dispatch_email(
         to_email=to_email,
         subject=subject,
         html_content=html_content,
@@ -138,7 +90,7 @@ def send_verification_email(to_email: str, name: str, token: str) -> None:
     )
 
 
-def send_password_reset_email(to_email: str, name: str, token: str, otp_code: Optional[str] = None) -> None:
+def send_password_reset_email(to_email: str, name: str, token: str, otp_code: Optional[str] = None) -> bool:
     """Send a password reset email via Resend containing the reset link and optional 6-digit OTP.
 
     Designed for use with FastAPI BackgroundTasks. Errors are caught and logged
@@ -201,7 +153,7 @@ def send_password_reset_email(to_email: str, name: str, token: str, otp_code: Op
         f"This request expires in {expiry_min} minutes. If you did not request this, please ignore this email."
     )
 
-    _dispatch_email(
+    return _dispatch_email(
         to_email=to_email,
         subject=subject,
         html_content=html_content,
@@ -210,9 +162,12 @@ def send_password_reset_email(to_email: str, name: str, token: str, otp_code: Op
     )
 
 
-def _dispatch_email(to_email: str, subject: str, html_content: str, text_content: str, action_name: str) -> None:
-    """Internal helper to dispatch email via SMTP (e.g. Gmail) or Resend."""
-    record_email_sent(to_email)
+def _dispatch_email(to_email: str, subject: str, html_content: str, text_content: str, action_name: str) -> bool:
+    """Return True only for provider acceptance (not guaranteed inbox delivery).
+
+    Never log message bodies, subjects containing OTPs, or provider exception
+    text, which can contain recipients, credentials or reset links.
+    """
 
     # 1. Prefer SMTP if configured (works seamlessly with Gmail to any address)
     if settings.SMTP_HOST and settings.SMTP_USER and settings.SMTP_PASSWORD:
@@ -225,25 +180,27 @@ def _dispatch_email(to_email: str, subject: str, html_content: str, text_content
 
         sent = False
         try:
-            with smtplib.SMTP_SSL(settings.SMTP_HOST, 465, timeout=6) as ssl_server:
+            with smtplib.SMTP_SSL(settings.SMTP_HOST, 465, timeout=6, context=ssl.create_default_context()) as ssl_server:
                 ssl_server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-                ssl_server.send_message(msg)
-            logger.info("%s email successfully dispatched via SMTP SSL (port 465) to <%s>", action_name, to_email)
+                if ssl_server.send_message(msg) != {}:
+                    raise smtplib.SMTPException("Recipient refused")
+            logger.info("%s email accepted via SMTP SSL", action_name)
             sent = True
         except Exception as ssl_exc:
-            logger.warning("SMTP SSL port 465 failed for <%s>: %s. Retrying via STARTTLS port %s...", to_email, ssl_exc, settings.SMTP_PORT)
+            logger.warning("SMTP SSL failed (%s); trying STARTTLS", type(ssl_exc).__name__)
             try:
                 with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT or 587, timeout=6) as server:
-                    server.starttls()
+                    server.starttls(context=ssl.create_default_context())
                     server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-                    server.send_message(msg)
-                logger.info("%s email successfully dispatched via SMTP (port %s) to <%s>", action_name, settings.SMTP_PORT, to_email)
+                    if server.send_message(msg) != {}:
+                        raise smtplib.SMTPException("Recipient refused")
+                logger.info("%s email accepted via SMTP STARTTLS", action_name)
                 sent = True
             except Exception as smtp_exc:
-                logger.error("Failed to send %s email to <%s> via SMTP: %s", action_name, to_email, smtp_exc)
+                logger.error("%s SMTP delivery failed (%s)", action_name, type(smtp_exc).__name__)
 
         if sent:
-            return
+            return True
 
     # 2. Try Resend if configured
     if settings.RESEND_API_KEY:
@@ -256,25 +213,29 @@ def _dispatch_email(to_email: str, subject: str, html_content: str, text_content
                 "html": html_content,
                 "text": text_content,
             }
-            resend.Emails.send(params)
-            logger.info("%s email successfully dispatched via Resend to <%s>", action_name, to_email)
-            return
+            result = resend.Emails.send(params)
+            if (
+                isinstance(result, dict)
+                and isinstance(result.get("id"), str)
+                and result["id"].strip()
+                and not result.get("error")
+                and result.get("statusCode", 200) in (200, 201, 202)
+            ):
+                logger.info("%s email accepted via Resend", action_name)
+                return True
+            logger.error("%s Resend response did not confirm acceptance", action_name)
         except Exception as exc:
-            logger.error("Failed to send %s email to <%s> via Resend: %s", action_name, to_email, exc)
+            logger.error("%s Resend delivery failed (%s)", action_name, type(exc).__name__)
 
-    logger.info(
-        "Neither SMTP nor Resend active. %s email to <%s> logged (Subject: %s).",
-        action_name,
-        to_email,
-        subject,
-    )
+    logger.error("%s email was not accepted by any provider; check email configuration and provider health", action_name)
+    return False
 
 
 # ──────────────────────────────────────────────────────────────────────
 # Backwards-compatible OTP email helper for existing legacy callers
 # ──────────────────────────────────────────────────────────────────────
 
-def send_password_reset_otp_email(to_email: str, roll_no: str, otp_code: str) -> None:
+def send_password_reset_otp_email(to_email: str, roll_no: str, otp_code: str) -> bool:
     """Send a 6-digit password reset OTP code to student's email address (Resend or legacy SMTP)."""
     subject = f"GDGOC Hacktoberfest - Password Reset Code: {otp_code}"
 
@@ -301,42 +262,5 @@ def send_password_reset_otp_email(to_email: str, roll_no: str, otp_code: str) ->
         f"This code will expire in 15 minutes."
     )
 
-    logger.info("PASSWORD RESET OTP GENERATED for %s (%s): %s", roll_no, to_email, otp_code)
-
-    # 1. Try Resend if configured
-    if settings.RESEND_API_KEY:
-        try:
-            resend.api_key = settings.RESEND_API_KEY
-            resend.Emails.send({
-                "from": settings.EMAIL_FROM,
-                "to": [to_email],
-                "subject": subject,
-                "html": html_content,
-                "text": text_content,
-            })
-            logger.info("Password reset OTP email sent successfully via Resend to %s", to_email)
-            return
-        except Exception as exc:
-            logger.error("Failed to send OTP email via Resend to %s: %s", to_email, exc)
-
-    # 2. Fallback to SMTP if configured
-    if not getattr(settings, "SMTP_HOST", "") or not getattr(settings, "SMTP_USER", ""):
-        return
-
-    try:
-        msg = MIMEMultipart("alternative")
-        msg["Subject"] = subject
-        msg["From"] = getattr(settings, "SMTP_FROM", "") or settings.SMTP_USER
-        msg["To"] = to_email
-
-        msg.attach(MIMEText(text_content, "plain"))
-        msg.attach(MIMEText(html_content, "html"))
-
-        with smtplib.SMTP(settings.SMTP_HOST, settings.SMTP_PORT, timeout=10) as server:
-            server.starttls()
-            server.login(settings.SMTP_USER, settings.SMTP_PASSWORD)
-            server.send_message(msg)
-
-        logger.info("Password reset OTP email sent successfully via SMTP to %s", to_email)
-    except Exception as exc:
-        logger.error("Failed to send password reset OTP email via SMTP to %s: %s", to_email, exc)
+    # Share acceptance detection and redacted logging with the link-based flow.
+    return _dispatch_email(to_email, subject, html_content, text_content, "Password Reset OTP")
