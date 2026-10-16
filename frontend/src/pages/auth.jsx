@@ -908,23 +908,7 @@ export function Login() {
                   />
                 </Field>
 
-                <Field
-                  label="Password"
-                  hint={
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setError(null);
-                        setSuccessMsg(null);
-                        setResetIdentifier(identifier);
-                        setMode("forgot_request");
-                      }}
-                      className="font-mono font-bold uppercase text-gblue underline decoration-dotted hover:text-ink"
-                    >
-                      Forgot password?
-                    </button>
-                  }
-                >
+                <Field label="Password">
                   <div className="relative">
                     <Input
                       type={showPassword ? "text" : "password"}
