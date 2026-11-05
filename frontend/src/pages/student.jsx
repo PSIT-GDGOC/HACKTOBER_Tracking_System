@@ -88,8 +88,8 @@ export function StudentDashboardContent() {
       <PageHeader
         eyebrow="Student dashboard"
         title={`${d.name.split(" ")[0]}'s workspace`}
-        subtitle={`Open Source Sprint · ${d.verified ? "verified account" : "verification pending"} · synced continuously from GitHub webhooks`}
-        sticker={`${d.active_claims_count} active claims`}
+        subtitle="🏁 Event Concluded · Final Standings Archived · Scores Locked"
+        sticker="Event Wrapped"
         actions={<UpdatedPill lastUpdated={dash.lastUpdated} />}
       />
 

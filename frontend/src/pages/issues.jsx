@@ -95,8 +95,8 @@ export function IssueExplorerContent() {
       <PageHeader
         eyebrow="Contribute"
         title={activeRepo ? `Issues · ${activeRepo.name}` : "Issue Explorer"}
-        subtitle={activeRepo ? `Showing issues for ${activeRepo.name}` : "Explore issues across your repositories."}
-        sticker={`${total} issues`}
+        subtitle="🏁 Hacktoberfest 2026 has concluded. Issue claiming is closed; repository issues remain archived for reference."
+        sticker="Claiming Closed"
         actions={
           <div className="flex items-center gap-2">
             <button

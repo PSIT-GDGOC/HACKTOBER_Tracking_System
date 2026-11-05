@@ -201,17 +201,12 @@ export function IssueDrawer({ issueId, onClose, onOpenPr }) {
           <Panel className="p-4">
             <p className="font-mono text-[10px] font-bold uppercase tracking-[0.14em] text-ink-soft">Claim</p>
             {issue.status === "open" && !issue.active_claim ? (
-              <div className="mt-2">
-                <Button
-                  variant="green"
-                  onClick={doClaim}
-                  loading={claim.pending}
-                  disabled={claim.pending}
-                >
-                  ⚑ Claim for {pointsFor(issue)} pts
-                </Button>
-                <p className="mt-2 font-mono text-[10px] text-ink-soft">
-                  Claims are locked atomically with a database constraint — two students can never hold the same issue.
+              <div className="mt-2 space-y-2">
+                <div className="inline-flex items-center gap-2 border-[2px] border-ink bg-paper-2 px-3 py-1.5 font-display text-xs font-bold uppercase text-ink shadow-[2px_2px_0_0_#101010]">
+                  <span>🔒 Claiming Closed · Event Ended</span>
+                </div>
+                <p className="font-mono text-[10px] text-ink-soft">
+                  Hacktoberfest 2026 has concluded. No further issues can be claimed.
                 </p>
               </div>
             ) : issue.active_claim ? (
@@ -219,7 +214,7 @@ export function IssueDrawer({ issueId, onClose, onOpenPr }) {
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge tone="blue" dot>
                     {isMine
-                      ? "CLAIMED BY YOU"
+                      ? "CLAIMED BY YOU (FINALIZED)"
                       : `CLAIMED BY ${issue.active_claim.user?.name ?? "ANOTHER STUDENT"}`}
                   </Badge>
                   {issue.active_claim.user?.github_username && (
@@ -229,17 +224,9 @@ export function IssueDrawer({ issueId, onClose, onOpenPr }) {
                     <RelativeTime date={issue.active_claim.claimed_at} />
                   </span>
                 </div>
-                {(isMine || canModerate) && (
-                  <Button
-                    variant="red"
-                    size="sm"
-                    onClick={doRelease}
-                    loading={unclaim.pending}
-                    disabled={unclaim.pending}
-                  >
-                    Release claim
-                  </Button>
-                )}
+                <div className="font-mono text-[10px] text-ink-soft italic">
+                  Claim record is locked and archived.
+                </div>
               </div>
             ) : (
               <p className="mt-2 font-mono text-xs text-ink-soft">{statusLabel(issue.status)} — not claimable right now.</p>
