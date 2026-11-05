@@ -52,8 +52,8 @@ export function Leaderboard() {
       <PageHeader
         eyebrow="Community"
         title="Leaderboard"
-        subtitle="One indexed Postgres query — no cache layer, no separate data store. Points land the moment a contribution is accepted."
-        sticker={myEntry ? `you're #${myEntry.rank}` : `${total} ranked`}
+        subtitle="🏁 Final Standings Archived · Scores and contributions are locked. Points are permanently recorded."
+        sticker={myEntry ? `final: #${myEntry.rank}` : "final standings"}
         actions={<UpdatedPill lastUpdated={q.lastUpdated} />}
       />
 
