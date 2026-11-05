@@ -58,6 +58,7 @@ class Settings(BaseSettings):
 
     # Event Rules
     MAX_ACTIVE_CLAIMS_PER_STUDENT: int = 2
+    EVENT_CLAIMS_LOCKED: bool = False
 
     # Verification Media Storage (Supabase Storage / Local Uploads fallback)
     STORAGE_DIR: str = "uploads"

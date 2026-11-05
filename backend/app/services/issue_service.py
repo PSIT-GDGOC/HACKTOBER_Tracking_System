@@ -566,10 +566,11 @@ def claim_issue(db: Session, issue_id: int, user_id: int) -> ClaimResponse:
     Enforces row locking and catches concurrency collisions via the DB unique constraint.
     """
     # Event Halt Guard: Event has concluded
-    raise HTTPException(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        detail="Hacktoberfest 2026 has concluded! Issue claiming is closed and all scores are finalized."
-    )
+    if settings.EVENT_CLAIMS_LOCKED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Hacktoberfest 2026 has concluded! Issue claiming is closed and all scores are finalized."
+        )
     # 1. Row locking for concurrency safety if supported by database (e.g. Postgres)
     query = db.query(Issue).filter(Issue.id == issue_id)
     if db.bind and db.bind.dialect.name == "postgresql":
@@ -730,10 +731,11 @@ def claim_issue(db: Session, issue_id: int, user_id: int) -> ClaimResponse:
 def unclaim_issue(db: Session, issue_id: int, user_id: int, user_role: UserRole = UserRole.STUDENT) -> dict:
     """Release an active claim and return issue to OPEN status."""
     # Event Halt Guard: Event has concluded
-    raise HTTPException(
-        status_code=status.HTTP_400_BAD_REQUEST,
-        detail="Hacktoberfest 2026 has concluded! Claim records are permanently locked."
-    )
+    if settings.EVENT_CLAIMS_LOCKED:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Hacktoberfest 2026 has concluded! Claim records are permanently locked."
+        )
     issue = db.query(Issue).filter(Issue.id == issue_id).first()
     if not issue:
         raise HTTPException(
@@ -869,4 +871,3 @@ def update_issue(
         .first()
     )
     return _enrich_issue_response(issue, active_claim)
-

@@ -13,6 +13,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.db import Base, get_db
+from app.config import settings
 from app.main import app
 from app.models import (
     User, UserRole,
@@ -129,3 +130,11 @@ def test_reclaim_reuses_existing_row(idempotent_setup):
     assert len(contribs) == 1, f"Expected 1 contribution row, got {len(contribs)}"
     assert contribs[0].status == ContributionStatus.CLAIMED
     db.close()
+
+
+def test_claim_blocked_when_event_claims_locked(idempotent_setup, monkeypatch):
+    """Claiming should be blocked when EVENT_CLAIMS_LOCKED is enabled."""
+    client, _ = idempotent_setup
+    monkeypatch.setattr(settings, "EVENT_CLAIMS_LOCKED", True)
+    res = client.post("/issues/1/claim", headers={"X-User-Id": "1"})
+    assert res.status_code == 400
